@@ -6,4 +6,4 @@ def fitness_calc(kWh_result):
 
     dif = abs(kWh_result - target_kWh)
 
-    return pow(dif, 2)
+    return round(pow(dif, 2), 2)

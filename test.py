@@ -44,15 +44,21 @@ print(parent_pool.head())
 parent1 = parent_pool.sample(n=1)
 # print(parent1[4 + 1 + 1])
 print(parent1)
-print(parent1.iloc[0,4+1])
-print(parent1.shape[1])
-print('shape is ', parent_pool.shape)
-# print((parent1[['feature1', 'feature2']]))
-# print(list(parent1.loc[0, ['feature1', 'feature2']]))
-# sort on fitness
+features = ['feature1', 'feature2']
+# print(parent1.iloc[0,4+1])
+# print(parent1.shape[1])
+# print('shape is ', parent_pool.shape)
+# # print((parent1[['feature1', 'feature2']]))
+# print(list(parent1.at[0, [features]]))
+df = parent1[features]
+gen_features = list(df.iloc[0])
+print(gen_features)
+name = parent1['UniqueName'].iloc[0]
+print(name)
+# # sort on fitness
 
-for each in prev_gen_pool[ prev_gen_pool['Generation'] == generation_count ]:
-    print(each)
+# for each in prev_gen_pool[ prev_gen_pool['Generation'] == generation_count ]:
+#     print(each)
 
 
 # from Calibration.fitness_function import fitness_calc
