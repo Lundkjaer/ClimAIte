@@ -10,28 +10,26 @@ from fitness_function import fitness_calc
 # from run import run_EP
 
 
-# feature_names = ['u-value', 'infiltrgrgrsgration']
-# feature_bounds = [[0,100],[0,50],[0.1,0.75]]
-# feature_increments = [12,5,0.08]
-
-
-
-
 names_fields = ['Generation', 'Parent1', 'Parent2', 'Unique Name']
 calculated_fields = ['Fitness Score', 'kWh result']
 
 #               'name'      [bounds]    step-size
-feature_meta = [['u-value', [0,100], 12],
-                ['infiltration', [0.1,0.6], 0.04],
-                ['mass', [200,5000], 200]
+feature_meta = [['idf.People.People_5a9ee43c.People_per_Floor_Area', [0.02,0.3], 0.01],
+        ['idf.ElectricEquipment.Equipment_d01c6929.Watts_per_Zone_Floor_Area', [1,15], 1],
+        ['idf.ZoneInfiltration:DesignFlowRate.Infiltration_d1fbaf75.Flow_Rate_per_Exterior_Surface_Area', [0,0.0003], 0.00002],
+        ['idf.WindowMaterial:SimpleGlazingSystem.PH_Window.UFactor', [0.4,1.4], 0.1],
+        ['idf.WindowMaterial:SimpleGlazingSystem.PH_Window.Solar_Heat_Gain_Coefficient', [0.3,0.9], 0.1],
+        ['idf.Material:NoMass.Typical Insulation-R50.Thermal_Resistance', [3,20], 1],
+        ['idf.Material.Generic Gypsum Board.Specific_Heat', [500,3000], 100],
+        ['idf.ZoneHVAC:IdealLoadsAirSystem.Z1_Ground_Floor_48970ba6 Ideal Loads Air System.Sensible_Heat_Recovery_Effectiveness', [0.4,0.95], 0.2]
                 ]
 
 
-PopulationSize = 40
+PopulationSize = 20
 WinnerPercentage = 0.2
-mutation_rate = 0.1
+mutation_rate = 0.2
 
-generation_count = 0
+generation_counter = 0   #always 0
 max_count = 10
 
 feature_names = [x[0] for x in feature_meta]
@@ -82,7 +80,7 @@ def breeding(data_record):
     '''
     WinnerNumber = int(round(PopulationSize * WinnerPercentage))
 
-    prev_gen_pool = data_record[ data_record['Generation'] == generation_count - 1 ] # select previous generation
+    prev_gen_pool = data_record[ data_record['Generation'] == generation_counter - 1 ] # select previous generation
     prev_gen_pool = prev_gen_pool.sort_values(by=['Fitness Score']) # sort by fitness
     parent_pool = prev_gen_pool.iloc[:WinnerNumber] # select only the top winner pool
 
@@ -118,10 +116,10 @@ def breeding(data_record):
             gene_no = random.randint(0,len(child)-1)
             child[gene_no] = random.choice(allowed_genes[gene_no])
         
-        name_fields_list = [generation_count,
+        name_fields_list = [generation_counter,
                           parent1['Unique Name'].iloc[0],
                           parent2['Unique Name'].iloc[0],
-                          f'{generation_count}-{new_child}'
+                          f'{generation_counter}-{new_child}'
                           ]
         calc_field_list = [np.NaN for i in range(len(calculated_fields))]
 
@@ -134,19 +132,13 @@ def breeding(data_record):
                                     ])
         
     data_record = data_record.reset_index(drop=True)
-    print('at the end of breed, htis is dataframe for gen ', generation_count)
-    print(data_record)
     return data_record
 
 
 
 def run_generation(data_record):
-    print('running generation calcs for gen: ', generation_count)
-    print('this is the current data frame')
-    print(data_record)
     # this below is hte same in hte main loop - could be a function instead
-    current_gen = data_record[ data_record['Generation'] == generation_count ]#.reset_index(drop=True)
-    print('this is hte shape of current gen ', current_gen.shape[0])
+    current_gen = data_record[ data_record['Generation'] == generation_counter ]#.reset_index(drop=True)
     assert current_gen.shape[0] == PopulationSize
     indices = current_gen.index
 
@@ -155,17 +147,16 @@ def run_generation(data_record):
 
     for i, index in enumerate(indices):
         kwh_result = run_EP(current_gen.iloc[[i]])
-        current_gen.at[i, 'kWh result'] = kwh_result
+        # current_gen.at[i, 'kWh result'] = kwh_result
         data_record.at[index, 'kWh result'] = kwh_result
 
 
+
     for i, index in enumerate(indices):
-        fit_result = fitness_calc(current_gen.at[i, 'kWh result'])
-        current_gen.at[i, 'Fitness Score'] = fit_result
+        fit_result = fitness_calc(data_record.at[index, 'kWh result'])
+        # fit_result = fitness_calc(current_gen.at[i, 'kWh result'])
+        # current_gen.at[i, 'Fitness Score'] = fit_result
         data_record.at[index, 'Fitness Score'] = fit_result
-    
-    print('this is the current data frame after kwh adn fitness scores')
-    print(data_record)
 
     return data_record
 
@@ -189,8 +180,7 @@ def run_EP(genome):
 for i in range(max_count):
 
     # create first random PopulationPool
-    if generation_count == 0:
-        print('First start. Gen should be 0. for gen: ', generation_count)
+    if generation_counter == 0:
 
         # PopulationPool = []
         # for each genome in populationsize, give it a collection of genes from the allowable genes pool.
@@ -200,10 +190,10 @@ for i in range(max_count):
             for each in range(len(feature_names)):
                 first_genome.append(random.choice(allowed_genes[each]))
 
-            name_fields_list = [generation_count,
+            name_fields_list = [generation_counter,
                     'no parent',
                     'no parent',
-                    f'{generation_count}-{i}'
+                    f'{generation_counter}-{i}'
                     ]
             calc_field_list = [np.NaN for i in range(len(calculated_fields))]
 
@@ -221,19 +211,16 @@ for i in range(max_count):
         data_record = run_generation(data_record)
 
     # for subsequent loops we take the fitness score and associate it to the genomes. Then we sort them by their fitness.
-    elif generation_count > 0:
-        print('running next round for gen: ', generation_count)
-        print('data frame before breeding in gen ', generation_count)
-        print(data_record)
+    elif generation_counter > 0:
 
         data_record = breeding(data_record)
         data_record = run_generation(data_record)
         # run_generation()
 
-    path_record_name = os.path.join(current_directory, 'data_records', f'record_{generation_count}')
+    path_record_name = os.path.join(current_directory, 'data_records', f'record_{generation_counter}')
     data_record.to_csv(path_or_buf = path_record_name)
 
-    generation_count += 1
+    generation_counter += 1
 
 
 
