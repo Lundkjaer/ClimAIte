@@ -7,7 +7,8 @@ import pandas as pd
 import numpy as np
 
 from fitness_function import fitness_calc
-# from run import run_EP
+# from run_multiple_EPs import *
+from run_multiple_EPs import run_EPs_parallel_custom
 
 
 names_fields = ['Generation', 'Parent1', 'Parent2', 'Unique Name']
@@ -25,12 +26,12 @@ feature_meta = [['idf.People.People_5a9ee43c.People_per_Floor_Area', [0.02,0.3],
                 ]
 
 
-PopulationSize = 20
+PopulationSize = 4
 WinnerPercentage = 0.2
 mutation_rate = 0.2
 
 generation_counter = 0   #always 0
-max_count = 10
+max_count = 3
 
 feature_names = [x[0] for x in feature_meta]
 feature_bounds = [x[1] for x in feature_meta]
@@ -103,8 +104,8 @@ def breeding(data_record):
         
         # incest mutation: If the two parents are the same, force a mutation
         if parent1['Unique Name'].iloc[0] == parent2['Unique Name'].iloc[0]:
-            for i in range(int(len(parent1)/2)): # mutate half the genes
-                gene_no = random.randint(0,len(parent1)-1)
+            for i in range(int(len(feature_names)/2)): # mutate half the genes
+                gene_no = random.randint(0, len(feature_names) - 1)
                 child[gene_no] = random.choice(allowed_genes[gene_no])
                 # This loop is set up such that maybe half the genes will mutate
                 # but in other cases the same gene might be mutated
@@ -142,15 +143,15 @@ def run_generation(data_record):
     assert current_gen.shape[0] == PopulationSize
     indices = current_gen.index
 
-    # replace. Use index
 
-
+    kwh_from_EP_results = run_EPs_parallel_custom(current_gen)
     for i, index in enumerate(indices):
-        kwh_result = run_EP(current_gen.iloc[[i]])
-        # current_gen.at[i, 'kWh result'] = kwh_result
-        data_record.at[index, 'kWh result'] = kwh_result
+        data_record.at[index, 'kWh result'] = kwh_from_EP_results[i]
 
-
+    # for i, index in enumerate(indices):
+    #     kwh_result = run_EP(current_gen.iloc[[i]])
+    #     # current_gen.at[i, 'kWh result'] = kwh_result
+    #     data_record.at[index, 'kWh result'] = kwh_result
 
     for i, index in enumerate(indices):
         fit_result = fitness_calc(data_record.at[index, 'kWh result'])
@@ -160,21 +161,23 @@ def run_generation(data_record):
 
     return data_record
 
-def run_EP(genome):
-    #runnign simulatin oand returning kwh result
-    # genome is single index df
-    assert genome.shape[0] == 1
-    # gen_features = list(genome.loc[0, feature_names])
-    df = genome[feature_names]
-    gen_features = list(df.iloc[0])
+# def run_EP(genome): # deprecated
+#     #runnign simulatin oand returning kwh result
+#     # genome is single index df
+#     assert genome.shape[0] == 1
+#     # gen_features = list(genome.loc[0, feature_names])
+#     df = genome[feature_names]
+#     gen_features = list(df.iloc[0])
 
-    # Energyplus
+#     # Energyplus
 
-    kWh = 0
-    for i in range(len(gen_features)):
-        kWh += gen_features[i]
+#     kWh = 0
+#     for i in range(len(gen_features)):
+#         kWh += gen_features[i]
 
-    return round(kWh, 2)
+#     return round(kWh, 2)
+
+
 
 # Main loop
 for i in range(max_count):
