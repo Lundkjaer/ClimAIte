@@ -67,7 +67,7 @@ def run_EPs_parallel_custom(current_gen):
     # run in parallel
     runner = EPlusRunner(eplus_root)
 
-    with joblib.parallel_backend("loky", n_jobs=10):
+    with joblib.parallel_backend("loky", n_jobs=8):
         sims = runner.run_many(samples, backup_strategy='always', backup_dir=archive_folder, version_mismatch_action='ignore')
 
     list_of_sims = list(sims.values())

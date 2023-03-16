@@ -22,16 +22,16 @@ feature_meta = [['idf.People.People_5a9ee43c.People_per_Floor_Area', [0.02,0.3],
         ['idf.WindowMaterial:SimpleGlazingSystem.PH_Window.Solar_Heat_Gain_Coefficient', [0.3,0.9], 0.1],
         ['idf.Material:NoMass.Typical Insulation-R50.Thermal_Resistance', [3,20], 1],
         ['idf.Material.Generic Gypsum Board.Specific_Heat', [500,3000], 100],
-        ['idf.ZoneHVAC:IdealLoadsAirSystem.Z1_Ground_Floor_48970ba6 Ideal Loads Air System.Sensible_Heat_Recovery_Effectiveness', [0.4,0.95], 0.2]
+        ['idf.ZoneHVAC:IdealLoadsAirSystem.Z1_Ground_Floor_48970ba6 Ideal Loads Air System.Sensible_Heat_Recovery_Effectiveness', [0.4,0.95], 0.02]
                 ]
 
 
-PopulationSize = 4
-WinnerPercentage = 0.2
-mutation_rate = 0.2
+PopulationSize = 32
+WinnerPercentage = 0.3
+mutation_rate = 0.3
 
 generation_counter = 0   #always 0
-max_count = 3
+max_count = 15
 
 feature_names = [x[0] for x in feature_meta]
 feature_bounds = [x[1] for x in feature_meta]
