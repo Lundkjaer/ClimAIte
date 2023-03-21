@@ -10,6 +10,7 @@ from fitness_function import fitness_calc
 # from run_multiple_EPs import *
 from run_multiple_EPs import run_EPs_parallel_custom
 
+# to run it requires the following packages: pandas, eppy, energyplus-wrapper, python-slugify, joblib
 
 names_fields = ['Generation', 'Parent1', 'Parent2', 'Unique Name']
 calculated_fields = ['Fitness Score', 'kWh result']
