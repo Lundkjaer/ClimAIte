@@ -49,7 +49,7 @@ class QTrainer:
         
         # 1: predicted Q values with current state
         pred = self.model(state) # gives 3 values (output layer) from network
-
+        # TODO fix to take many values rather than single argmax
         target = pred.clone()
         for idx in range(len(game_over)):
             Q_new = reward[idx]

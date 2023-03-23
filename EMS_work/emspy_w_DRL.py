@@ -9,15 +9,19 @@ of the MdpManager to handle all of the simulation data and EMS variables.
 """
 import datetime
 import os
-
 import matplotlib.pyplot as plt
+
+import torch
+import random
+import numpy as np
+from collections import deque
+from model import Linear_QNet, QTrainer
+from helper_plot import plot
 
 from emspy import EmsPy, BcaEnv, MdpManager
 
 
-# TODO pytorch video at 23 minutes, these are items that need to change to communicate with agent
-
-os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'  # a workaround to an error I encountered when running sim
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'  # a workaround to an error I encountered when running sim  
 # OMP: Error #15: Initializing libiomp5md.dll, but found libiomp5md.dll already initialized.
 
 
@@ -33,7 +37,7 @@ idf_file_name = r"C:\Users\sebas\Documents\GitHub\ClimAIte\EMS_work\test_files\B
 ep_weather_path = r"C:\Users\sebas\Documents\GitHub\ClimAIte\EMS_work\test_files\GBR_WAL_Lake.Vyrnwy.034100_TMYx.2007-2021.epw"  # EPW weather file
 
 # Output .csv Path (optional)
-cvs_output_path = r'dataframes_output_test.csv'
+cvs_output_path = r'\EMS_work\dataframes_output_test.csv'
 
 
 def temp_c_to_f(temp_c: float, arbitrary_arg=None):
@@ -135,6 +139,9 @@ sim = BcaEnv(
     tc_weather=my_mdp.tc_weather
 )
 
+MAX_MEMORY = 100_000 # roughly 11 years of hourly data
+BATCH_SIZE = 1000
+LR = 0.001
 
 class Agent:
     """
@@ -158,6 +165,13 @@ class Agent:
         self.bca = bca
         self.mdp = mdp
 
+        self.n_game_steps = 0
+        self.epsilon = 0 # randomness, greedy/exploration
+        self.gamma = 0.9 # discount rate
+        self.memory = deque(maxlen=MAX_MEMORY) # if memory larger, it calls popleft()
+        self.model = Linear_QNet(11,256,3) # neural network
+        self.trainer = QTrainer(self.model, lr=LR, gamma=self.gamma)
+
         # simplify naming of all MDP elements/types
         self.vars = mdp.ems_type_dict['var']  # all MdpElements of EMS type var
         self.meters = mdp.ems_type_dict['meter']  # all MdpElements of EMS type meter
@@ -173,14 +187,78 @@ class Agent:
         # simulation data state
         self.zn0_temp = None  # deg C
         self.time = None
+        self.day_of_week = None
+
+        self.work_hours_heating_setpoint = 20  # deg C
+        self.work_hours_cooling_setpoint = 25  # deg C
+        self.off_hours_heating_setpoint = 15  # deg C
+        self.off_hours_cooilng_setpoint = 30  # deg C
+        self.work_day_start = datetime.time(8, 0)  # day starts 6 am
+        self.work_day_end = datetime.time(16, 0)  # day ends at 8 pm
 
         # print reporting
         self.print_every_x_hours = 2
+    
+    def get_state(self, game): #observation in BcaEnv
+        pass
+
+    def remember(self, state, action, reward, next_state, game_over):
+        self.memory.append((state, action, reward, next_state, game_over)) #deque will popleft() if max_memory is reached. Extra () parantheses to store values as single tuple
+
+    def train_long_memory(self):
+        if len(self.memory) > BATCH_SIZE:
+            mini_sample = random.sample(self.memory, BATCH_SIZE) # return list of tuples
+        else:
+           mini_sample = self.memory
+        
+        states, actions, rewards, next_states, game_overs = zip(*mini_sample) # unpack into lists rather than combined tuples
+        self.trainer.train_step(states, actions, rewards, next_states, game_overs)
+
+    def train_short_memory(self, state, action, reward, next_state, game_over):
+        self.trainer.train_step(state, action, reward, next_state, game_over)
+
+    def reward_calculation(self): # TODO add in negative reward for spending kWh
+        total_reward = 0
+
+        # get meter reading for prev kwh spending
+        # total_reward -= prev_kwh * 2
+
+        if self.work_day_start < self.time.time() < self.work_day_end:  #
+            # during workday
+            if self.zn0_temp < self.work_hours_heating_setpoint:
+                total_reward -= 10
+        #     heating_setpoint = work_hours_heating_setpoint
+        #     cooling_setpoint = work_hours_cooling_setpoint
+        #     thermostat_settings = 'Work-Hours Thermostat'
+        # else:
+        #     # off work
+        #     heating_setpoint = off_hours_heating_setpoint
+        #     cooling_setpoint = off_hours_cooilng_setpoint
+        #     thermostat_settings = 'Off-Hours Thermostat'
+
+        return total_reward
+
+
+    def get_action(self, state): #action/actuation in BcaEnv
+        # random moves: exploration / exploitation
+        self.epsilon = 80 - self.n_game_steps
+        final_move = None # [0,0,0]
+        if random.randint(0,200) < self.epsilon:
+            move = random.randint(0,2)
+            final_move[move] = 1
+        else:
+            state0 = torch.tensor(state, dtype=torch.float)
+            prediction = self.model(state0)
+            move = torch.argmax(prediction).item() # TODO fix so that it takes multiple
+            final_move[move] = 1
+        
+        return final_move
 
     def observation_function(self):
         # -- FETCH/UPDATE SIMULATION DATA --
         # Get data from simulation at current timestep (and calling point)
         self.time = self.bca.get_ems_data(['t_datetimes'])
+        self.day_of_week = self.bca.get_ems_data(['t_days']) # An integer day of week (1-7)
 
         var_data = self.bca.get_ems_data(self.var_names)
         meter_data = self.bca.get_ems_data(self.meter_names, return_dict=True)
@@ -225,39 +303,68 @@ class Agent:
             print(f'\t\tOutdoor Temp: {round(outdoor_temp, 2)} C, {round(outdoor_temp_f,2)} F')
 
     def actuation_function(self):
-        work_hours_heating_setpoint = 18  # deg C
-        work_hours_cooling_setpoint = 22  # deg C
+        
+        #observations normalised TODO
 
-        off_hours_heating_setpoint = 15  # deg C
-        off_hours_cooilng_setpoint = 30  # deg C
+        # current state as np array
+        # state[idx] = next_state[idx -1]
+        state_prev = np.array([], dtype=float) # Observation function value TODO
 
-        work_day_start = datetime.time(6, 0)  # day starts 6 am
-        work_day_end = datetime.time(20, 0)  # day ends at 8 pm
+        # reward as float or int
+        # reward[idx -1]
+        prev_reward = self.reward_calculation()
 
-        if work_day_start < self.time.time() < work_day_end:  #
-            # during workday
-            heating_setpoint = work_hours_heating_setpoint
-            cooling_setpoint = work_hours_cooling_setpoint
-            thermostat_settings = 'Work-Hours Thermostat'
-        else:
-            # off work
-            heating_setpoint = off_hours_heating_setpoint
-            cooling_setpoint = off_hours_cooilng_setpoint
-            thermostat_settings = 'Off-Hours Thermostat'
+        # add missing info to old memory (reward and state)
+        if self.n_game_steps > 1:
+            temp_recall = list(self.memory[-1])
+            temp_recall[2] = prev_reward
+            temp_recall[3] = state_prev
+            self.memory[-1] = tuple(temp_recall)
 
-        # print reporting
+        # train short memory
+        if self.n_game_steps > 1:
+            state_before, action_chosen, reward_given, state_after, game_overs = zip(*self.memory[-1]) # unpack into lists rather than tuple
+            self.train_short_memory(state_before, action_chosen, reward_given, state_after, game_overs)
+
+        # train long memory / experience replay
+        if self.day_of_week == 7 and self.time.hour == 23: # sunday evening experience replay
+            print('\n\t Experince replay activated, as Sunday evening at 23:00 detected')
+            self.train_long_memory()
+
+        action = self.get_action(state_prev) #predict action # need to fix def to handle multiple
+
+        # denormalize actions? no
+        # heating_setpoint, second_actuation = zip(action)
+        heating_setpoint = action
+        
+        # remember new stuff
+        next_reward = None
+        next_state = None
+        game_over = False
+        self.remember(state_prev, action, next_reward, next_state, game_over)
+
+        self.n_game_steps += 1
+
+        # print('Game ', agent.n_games, 'Score ', score, 'Record: ', record)
+        # create plot for each day time step? - if self.time.hour % 12 == 0 # twice a day
+                # print reporting
         if self.time.hour % self.print_every_x_hours == 0 and self.time.minute == 0:
             print(f'\n\t* Actuation Function:'
-                  f'\n\t\t*{thermostat_settings}*'
+                #   f'\n\t\t*{thermostat_settings}*'
                   f'\n\t\tHeating Setpoint: {heating_setpoint}'
-                  f'\n\t\tCooling Setpoint: {cooling_setpoint}\n'
+                #   f'\n\t\tCooling Setpoint: {cooling_setpoint}\n'
                   )
+        
 
+
+        # return final_move # this will be return actuations
+        # return dict of next_action
         # return actuation dictionary, referring to actuator EMS variables set
         return {
             'zn0_heating_sp': heating_setpoint,
             # 'zn0_cooling_sp': cooling_setpoint
         }
+        
 
 
 # Create agent instance
@@ -276,6 +383,11 @@ sim.set_calling_point_and_callback_function(
 # -- RUN BUILDING SIMULATION --
 sim.run_env(ep_weather_path)
 sim.reset_state()  # reset when done
+
+
+my_agent.model.save()
+
+
 
 # -- Sample Output Data --
 output_dfs = sim.get_df(to_csv_file=cvs_output_path)  # LOOK at all the data collected here, custom DFs can be made too

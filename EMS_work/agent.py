@@ -12,6 +12,7 @@ LR = 0.001
 
 class Agent:
 
+    # transferred
     def __init__(self):
         self.n_games = 0
         self.epsilon = 0 # randomness, greedy/exploration
@@ -19,9 +20,9 @@ class Agent:
         self.memory = deque(maxlen=MAX_MEMORY) # if memory larger, it calls popleft()
         self.model = Linear_QNet(11,256,3) # neural network
         self.trainer = QTrainer(self.model, lr=LR, gamma=self.gamma)
-        # TODO model and trainer
 
 
+    # need to adjust to save states and memory cache to include next state or add current state to previous memory chunk
     def get_state(self, game): #observation in BcaEnv
         pass
 
@@ -32,7 +33,7 @@ class Agent:
         if len(self.memory) > BATCH_SIZE:
             mini_sample = random.sample(self.memory, BATCH_SIZE) # return list of tuples
         else:
-           mini_sample = self.memory
+            mini_sample = self.memory
         
         states, actions, rewards, next_states, game_overs = zip(*mini_sample) # unpack into lists rather than combined tuples
         self.trainer.train_step(states, actions, rewards, next_states, game_overs)
@@ -40,6 +41,7 @@ class Agent:
     def train_short_memory(self, state, action, reward, next_state, game_over):
         self.trainer.train_step(state, action, reward, next_state, game_over)
     
+    # transfered, loosely
     def get_action(self, state): #action/actuation in BcaEnv
         # random moves: exploration / exploitation
         self.epsilon = 80 - self.n_games
@@ -54,6 +56,10 @@ class Agent:
             final_move[move] = 1
         
         return final_move
+
+
+
+
 
 def train():
     plot_scores = []
@@ -86,7 +92,7 @@ def train():
             agent.n_games += 1
             agent.train_long_memory
 
-            if score > record:
+            if score < record:
                 record = score
                 agent.model.save()
 
