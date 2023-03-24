@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import torch.functional as F
+import torch.nn.functional as F
 import os
 
 class Linear_QNet(nn.Module):
@@ -12,8 +12,8 @@ class Linear_QNet(nn.Module):
 
     def forward(self, x):
         x = F.relu(self.linear1(x))
-        # x = self.linear2(x) # this was used in tutorial where raw numbers are outputted
-        x = F.sigmoid(self.linear2(x)) # this can be used instead to output float 0-1
+        x = self.linear2(x) # this was used in tutorial where raw numbers are outputted
+        # x = F.sigmoid(self.linear2(x)) # this can be used instead to output float 0-1
         return x
     
     def save(self, file_name='model.pth'):

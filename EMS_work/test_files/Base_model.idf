@@ -520,7 +520,7 @@ People,
   SeasonalSchedule_7de19e4d,              !- Number of People Schedule Name
   People/Area,                            !- Number of People Calculation Method
   ,                                       !- Number of People
-  0.09,                                   !- People per Floor Area {person/m2}
+  0.04,                                   !- People per Floor Area {person/m2}
   ,                                       !- Floor Area per Person {m2/person}
   0.3,                                    !- Fraction Radiant
   ,                                       !- Sensible Heat Fraction
@@ -570,7 +570,7 @@ ElectricEquipment,
   SeasonalSchedule_7de19e4d,              !- Schedule Name
   Watts/Area,                             !- Design Level Calculation Method
   ,                                       !- Design Level {W}
-  6,                                      !- Watts per Zone Floor Area {W/m2}
+  4,                                      !- Watts per Zone Floor Area {W/m2}
   ,                                       !- Watts per Person {W/person}
   0,                                      !- Fraction Latent
   0,                                      !- Fraction Radiant
@@ -16324,13 +16324,13 @@ HeatBalanceAlgorithm,
 
 RunPeriod,
   Run Period 1,                           !- Name
-  2,                                      !- Begin Month
-  22,                                     !- Begin Day of Month
+  1,                                      !- Begin Month
+  1,                                      !- Begin Day of Month
   2007,                                   !- Begin Year
-  6,                                      !- End Month
-  10,                                     !- End Day of Month
+  12,                                     !- End Month
+  28,                                     !- End Day of Month
   2007,                                   !- End Year
-  Thursday,                               !- Day of Week for Start Day
+  Monday,                                 !- Day of Week for Start Day
   No,                                     !- Use Weather File Holidays and Special Days
   No,                                     !- Use Weather File Daylight Saving Period
   No,                                     !- Apply Weekend Holiday Rule

@@ -10,6 +10,7 @@ of the MdpManager to handle all of the simulation data and EMS variables.
 import datetime
 import os
 import matplotlib.pyplot as plt
+import pandas as pd
 
 import torch
 import random
@@ -37,7 +38,7 @@ idf_file_name = r"C:\Users\sebas\Documents\GitHub\ClimAIte\EMS_work\test_files\B
 ep_weather_path = r"C:\Users\sebas\Documents\GitHub\ClimAIte\EMS_work\test_files\GBR_WAL_Lake.Vyrnwy.034100_TMYx.2007-2021.epw"  # EPW weather file
 
 # Output .csv Path (optional)
-cvs_output_path = r'\EMS_work\dataframes_output_test.csv'
+cvs_output_path = r'C:\Users\sebas\Documents\GitHub\ClimAIte\EMS_work\dataframes_output_test.csv'
 
 
 def temp_c_to_f(temp_c: float, arbitrary_arg=None):
@@ -90,7 +91,7 @@ tc_meters = {
     # 'electricity_cooling': [('Cooling:Electricity')],  # J
     # 'gas_heating': [('NaturalGas:HVAC')]  # J
 }
-
+# detailed weather which is not for current time cannot be called here. Instead I use the self.bca.get_weather_forecast inside the Agent
 tc_weather = {
     'oa_rh': [('outdoor_relative_humidity')],  # %RH
     'oa_db': [('outdoor_dry_bulb'), temp_c_to_f],  # deg C
@@ -110,7 +111,7 @@ HVAC operational schedules and night cycle managers that prevent EMS Actuator co
 HVAV is "off" and can't be operated. If all zones are to be controlled 24/7, they must be implemented as CoreZn.
 See the "HVAC Systems" tab in OpenStudio to zone configurations.
 """
-tc_actuators = {
+tc_actuators = { # 'user_var_name': ['component_type', 'control_type', 'actuator_key'] within the dict
     # HVAC Control Setpoints
     # 'zn0_cooling_sp': [('Zone Temperature Control', 'Cooling Setpoint', zn0)],  # deg C
     'zn0_heating_sp': [('Zone Temperature Control', 'Heating Setpoint', zn0)],  # deg C
@@ -165,13 +166,6 @@ class Agent:
         self.bca = bca
         self.mdp = mdp
 
-        self.n_game_steps = 0
-        self.epsilon = 0 # randomness, greedy/exploration
-        self.gamma = 0.9 # discount rate
-        self.memory = deque(maxlen=MAX_MEMORY) # if memory larger, it calls popleft()
-        self.model = Linear_QNet(11,256,3) # neural network
-        self.trainer = QTrainer(self.model, lr=LR, gamma=self.gamma)
-
         # simplify naming of all MDP elements/types
         self.vars = mdp.ems_type_dict['var']  # all MdpElements of EMS type var
         self.meters = mdp.ems_type_dict['meter']  # all MdpElements of EMS type meter
@@ -189,6 +183,10 @@ class Agent:
         self.time = None
         self.day_of_week = None
 
+        # self.rl_input_params = [self.zn0_temp, # the no. items must match the QNet input size
+        #                         self.time.hour,
+        #                         self.day_of_week]
+
         self.work_hours_heating_setpoint = 20  # deg C
         self.work_hours_cooling_setpoint = 25  # deg C
         self.off_hours_heating_setpoint = 15  # deg C
@@ -198,6 +196,15 @@ class Agent:
 
         # print reporting
         self.print_every_x_hours = 2
+
+        # DRL
+        self.n_game_steps = 0
+        self.epsilon = 0 # randomness, greedy/exploration
+        self.gamma = 0.9 # discount rate
+        self.memory = deque(maxlen=MAX_MEMORY) # if memory larger, it calls popleft()
+        self.model = Linear_QNet(4,256,1) # neural network (input, hidden, output)
+        self.trainer = QTrainer(self.model, lr=LR, gamma=self.gamma)
+
     
     def get_state(self, game): #observation in BcaEnv
         pass
@@ -221,7 +228,9 @@ class Agent:
         total_reward = 0
 
         # get meter reading for prev kwh spending
+        # can use electricity_facility? - this seems to be instantenous
         # total_reward -= prev_kwh * 2
+        total_reward -= round(self.bca.get_ems_data(['electricity_heating']) / 6_000_000, 2)
 
         if self.work_day_start < self.time.time() < self.work_day_end:  #
             # during workday
@@ -242,15 +251,17 @@ class Agent:
     def get_action(self, state): #action/actuation in BcaEnv
         # random moves: exploration / exploitation
         self.epsilon = 80 - self.n_game_steps
-        final_move = None # [0,0,0]
+        final_move = [0] # [0,0,0] in snake game TODO
         if random.randint(0,200) < self.epsilon:
-            move = random.randint(0,2)
-            final_move[move] = 1
+            # move = random.randint(0,2) # from snake with argmax
+            # final_move[move] = 1
+            final_move = random.randint(-20,30)
         else:
             state0 = torch.tensor(state, dtype=torch.float)
             prediction = self.model(state0)
-            move = torch.argmax(prediction).item() # TODO fix so that it takes multiple
-            final_move[move] = 1
+            # move = torch.argmax(prediction).item() # TODO fix so that it takes multiple
+            # final_move[move] = 1 # from snake with argmax
+            final_move[0] = prediction
         
         return final_move
 
@@ -280,7 +291,7 @@ class Agent:
         # OR get directly from BcaEnv
         self.zn0_temp = self.bca.get_ems_data(['zn0_temp'])
         # OR directly from output
-        self.zn0_temp = var_data[1]  # from BcaEnv list output
+        self.zn0_temp = var_data[0]  # from BcaEnv dict output
         self.zn0_temp = vars['zn0_temp']  # from MdpManager list output
         # outdoor air dry bulb temp
         outdoor_temp = weather_data['oa_db']  # from BcaEnv dict output
@@ -294,6 +305,11 @@ class Agent:
         zn0_temp_f = encoded_values_dict['zn0_temp']
         outdoor_temp_f = encoded_values_dict['oa_db']
 
+        # test TODO remove
+        temp_tmw, rh_tmw = self.bca.get_weather_forecast(['oa_db', 'oa_rh'], 'tomorrow', self.time.hour, 1)
+        temp_tmw_noon = self.bca.get_weather_forecast(['oa_db'], 'tomorrow', 12, 1)
+        temp_tmw_noon_ts1 = self.bca.get_weather_forecast(['oa_db'], 'tomorrow', 12, 1)
+
         # print reporting
         if self.time.hour % 2 == 0 and self.time.minute == 0:  # report every 2 hours
             print(f'\n\nTime: {str(self.time)}')
@@ -301,21 +317,38 @@ class Agent:
             print(f'\t\tVars: {var_data}\n\t\tMeters: {meter_data}\n\t\tWeather:{weather_data}')
             print(f'\t\tZone0 Temp: {round(self.zn0_temp,2)} C, {round(zn0_temp_f,2)} F')
             print(f'\t\tOutdoor Temp: {round(outdoor_temp, 2)} C, {round(outdoor_temp_f,2)} F')
+            print(f'\t\tNew test, outdoor temp tomorrow at same time: {temp_tmw} C.')
+            print(f'\t\tNew test, outdoor relative humidity tomorrow at same time: {rh_tmw} %.')
+            print(f'\t\tNew test, outdoor temp tomorrow at NOON with timestep 1: {temp_tmw_noon} C.')
+            print(f'\t\tNew test, outdoor temp tomorrow at NOON with timestep 1: {temp_tmw_noon_ts1} C.')
+            
+
+            '''sample output
+                    * Observation Function:
+                Vars: [21.757708832346, 34.90428052695303]
+                Meters: {'electricity_facility': 10139533.827672353, 'electricity_heating': 0.0}
+                Weather:{'oa_rh': 44.0, 'oa_db': 18.5, 'oa_pa': 96003.0, 'sun_up': True, 'rain': False, 'snow': False, 'wind_dir': 70.0, 'wind_speed': 7.2}
+                Zone0 Temp: 21.76 C, 21.76 F
+                Outdoor Temp: 18.5 C, 65.3 F'''
 
     def actuation_function(self):
         
-        #observations normalised TODO
+        #observations normalised? TODO
 
-        # current state as np array
-        # state[idx] = next_state[idx -1]
-        state_prev = np.array([], dtype=float) # Observation function value TODO
+        temp_tmw = self.bca.get_weather_forecast(['oa_db'], 'tomorrow', self.time.hour, 1)
 
+        # current state as np array, add new items to list
+        state_prev = np.array([self.zn0_temp, # the no. items must match the QNet input size
+                                self.time.hour,
+                                self.day_of_week,
+                                temp_tmw], dtype=float) 
+        
         # reward as float or int
         # reward[idx -1]
         prev_reward = self.reward_calculation()
 
         # add missing info to old memory (reward and state)
-        if self.n_game_steps > 1:
+        if self.n_game_steps >= 1:
             temp_recall = list(self.memory[-1])
             temp_recall[2] = prev_reward
             temp_recall[3] = state_prev
@@ -323,7 +356,7 @@ class Agent:
 
         # train short memory
         if self.n_game_steps > 1:
-            state_before, action_chosen, reward_given, state_after, game_overs = zip(*self.memory[-1]) # unpack into lists rather than tuple
+            state_before, action_chosen, reward_given, state_after, game_overs = self.memory[-1] # unpack list
             self.train_short_memory(state_before, action_chosen, reward_given, state_after, game_overs)
 
         # train long memory / experience replay
@@ -335,7 +368,7 @@ class Agent:
 
         # denormalize actions? no
         # heating_setpoint, second_actuation = zip(action)
-        heating_setpoint = action
+        heating_setpoint = round( float(action[0]) , 1) # TODO, might be wrong
         
         # remember new stuff
         next_reward = None
@@ -387,6 +420,11 @@ sim.reset_state()  # reset when done
 
 my_agent.model.save()
 
+# save agent memory
+current_directory = r"C:\Users\sebas\Documents\GitHub\ClimAIte\EMS_work"
+path_record_name = os.path.join(current_directory, 'agent memory.csv')
+df = pd.DataFrame(my_agent.memory, columns= ["state_prev", "action", "next_reward", "next_state", "game_over"])
+df.to_csv(path_or_buf = path_record_name)
 
 
 # -- Sample Output Data --
