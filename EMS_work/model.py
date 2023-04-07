@@ -50,13 +50,16 @@ class QTrainer:
         # 1: predicted Q values with current state
         pred = self.model(state) # gives 3 values (output layer) from network
         # TODO fix to take many values rather than single argmax
-        target = pred.clone()
-        for idx in range(len(game_over)):
-            Q_new = reward[idx]
-            if not game_over[idx]:
-                Q_new = reward[idx] + self.gamma * torch.max(self.model(next_state[idx]))
-            
-            target[idx][torch.argmax(action).item()] = Q_new
+
+        with torch.no_grad():
+            target = pred.clone()
+
+            for idx in range(len(game_over)):
+                Q_new = reward[idx]
+                if not game_over[idx]:
+                    Q_new = reward[idx] + self.gamma * torch.max(self.model(next_state[idx]))
+                
+                target[idx][torch.argmax(action).item()] = Q_new
 
 
         # 2: Q_new = r + y (gamma) * max(next_predicted Q value) # gets only one highest value -> only do this if not done

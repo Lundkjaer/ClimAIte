@@ -334,8 +334,8 @@ class Agent:
     def actuation_function(self):
         
         #observations normalised? TODO
-
-        temp_tmw = self.bca.get_weather_forecast(['oa_db'], 'tomorrow', self.time.hour, 1)
+        
+        temp_tmw = self.bca.get_weather_forecast(['oa_db'], 'tomorrow', self.time.hour, 1) # note: first timestep is 1
 
         # current state as np array, add new items to list
         state_prev = np.array([self.zn0_temp, # the no. items must match the QNet input size
