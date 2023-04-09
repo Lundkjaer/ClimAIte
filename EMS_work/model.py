@@ -5,15 +5,19 @@ import torch.nn.functional as F
 import os
 
 class Linear_QNet(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size):
+    def __init__(self, input_size, hidden_size1, hidden_size2, hidden_size3, output_size):
         super().__init__()
-        self.linear1 = nn.Linear(input_size, hidden_size)
-        self.linear2 = nn.Linear(hidden_size, output_size)
+        self.linear1 = nn.Linear(input_size, hidden_size1)
+        self.linear2 = nn.Linear(hidden_size1, hidden_size2)
+        self.linear3 = nn.Linear(hidden_size2, hidden_size3)
+        self.linear4 = nn.Linear(hidden_size3, output_size)
 
     def forward(self, x):
         x = F.relu(self.linear1(x))
-        x = self.linear2(x) # this was used in tutorial where raw numbers are outputted
-        # x = F.sigmoid(self.linear2(x)) # this can be used instead to output float 0-1
+        x = F.relu(self.linear2(x))
+        x = F.relu(self.linear3(x))
+        x = self.linear4(x) # this was used in tutorial where raw numbers are outputted
+        # x = F.sigmoid(self.linear4(x)) # this can be used instead to output float 0-1
         return x
     
     def save(self, file_name='model.pth'):

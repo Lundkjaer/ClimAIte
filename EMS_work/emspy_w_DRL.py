@@ -41,11 +41,11 @@ ep_weather_path = r"C:\Users\sebas\Documents\GitHub\ClimAIte\EMS_work\test_files
 cvs_output_path = r'C:\Users\sebas\Documents\GitHub\ClimAIte\EMS_work\dataframes_output_test.csv'
 
 
-def temp_c_to_f(temp_c: float, arbitrary_arg=None):
-    """Convert temp from C to F. Test function with arbitrary argument, for example."""
-    x = arbitrary_arg
+# def temp_c_to_f(temp_c: float, arbitrary_arg=None):
+#     """Convert temp from C to F. Test function with arbitrary argument, for example."""
+#     x = arbitrary_arg
 
-    return 1.8 * temp_c + 32
+#     return 1.8 * temp_c + 32
 
 
 # STATE SPACE (& Auxiliary Simulation Data)
@@ -94,7 +94,7 @@ tc_meters = {
 # detailed weather which is not for current time cannot be called here. Instead I use the self.bca.get_weather_forecast inside the Agent
 tc_weather = {
     'oa_rh': [('outdoor_relative_humidity')],  # %RH
-    'oa_db': [('outdoor_dry_bulb'), temp_c_to_f],  # deg C
+    'oa_db': [('outdoor_dry_bulb')],  # deg C
     'oa_pa': [('outdoor_barometric_pressure')],  # Pa
     'sun_up': [('sun_is_up')],  # T/F
     'rain': [('is_raining')],  # T/F
@@ -102,7 +102,7 @@ tc_weather = {
     'wind_dir': [('wind_direction')],  # deg
     'wind_speed': [('wind_speed')]  # m/s
     # 'wind_speed_tomorrow': [('wind_speed'), 'tomorrow', 12, 1]  # m/s
-}
+} # 'beam_solar', 'diffuse_solar' # Wh/m2
 
 # ACTION SPACE
 """
@@ -115,7 +115,8 @@ tc_actuators = { # 'user_var_name': ['component_type', 'control_type', 'actuator
     # HVAC Control Setpoints
     # 'zn0_cooling_sp': [('Zone Temperature Control', 'Cooling Setpoint', zn0)],  # deg C
     'zn0_heating_sp': [('Zone Temperature Control', 'Heating Setpoint', zn0)],  # deg C
-} # opening window from .edd APERTURE_E02C3A1A_OPENING,Zone Ventilation,Air Exchange Flow Rate,[m3/s]
+} # Z2_LOUVRE_20,AirFlow Network Window/Door Opening,Venting Opening Factor,[Fraction]
+# opening window from .edd APERTURE_E02C3A1A_OPENING,Zone Ventilation,Air Exchange Flow Rate,[m3/s]
 
 # There's the program setpoints too as; PROGRAMTYPE_E5AC29A0_8EC855C7_SETPOINT_HTGSETP,Schedule:Year,Schedule Value,[ ]
 # There's also outdoor air, maybe for window openings? MODEL OUTDOOR AIR NODE,System Node Setpoint,Temperature Minimum Setpoint,[C]
@@ -180,8 +181,11 @@ class Agent:
 
         # simulation data state
         self.zn0_temp = None  # deg C
+        self.zn1_temp = None  # deg C
         self.time = None
         self.day_of_week = None
+        self.work_hour_booleans_72 = [] # last element is next hour. Reversed list for RNN
+
 
         # self.rl_input_params = [self.zn0_temp, # the no. items must match the QNet input size
         #                         self.time.hour,
@@ -189,8 +193,8 @@ class Agent:
 
         self.work_hours_heating_setpoint = 20  # deg C
         self.work_hours_cooling_setpoint = 25  # deg C
-        self.off_hours_heating_setpoint = 15  # deg C
-        self.off_hours_cooilng_setpoint = 30  # deg C
+        self.off_hours_heating_setpoint = 15  # deg C # not currently used
+        self.off_hours_cooilng_setpoint = 30  # deg C # not currently used
         self.work_day_start = datetime.time(8, 0)  # day starts 6 am
         self.work_day_end = datetime.time(16, 0)  # day ends at 8 pm
 
@@ -202,7 +206,7 @@ class Agent:
         self.epsilon = 0 # randomness, greedy/exploration
         self.gamma = 0.9 # discount rate
         self.memory = deque(maxlen=MAX_MEMORY) # if memory larger, it calls popleft()
-        self.model = Linear_QNet(4,256,1) # neural network (input, hidden, output)
+        self.model = Linear_QNet(4,250,250,250,1) # neural network (input, hidden x3, output)
         self.trainer = QTrainer(self.model, lr=LR, gamma=self.gamma)
 
     
@@ -226,16 +230,19 @@ class Agent:
 
     def reward_calculation(self): # TODO add in negative reward for spending kWh
         total_reward = 0
-
+        # TODO make temp scale piecewise and increasing
         # get meter reading for prev kwh spending
         # can use electricity_facility? - this seems to be instantenous
         # total_reward -= prev_kwh * 2
         total_reward -= round(self.bca.get_ems_data(['electricity_heating']) / 6_000_000, 2)
 
-        if self.work_day_start < self.time.time() < self.work_day_end:  #
+        if self.work_day_start <= self.time.time() < self.work_day_end:  #
             # during workday
-            if self.zn0_temp < self.work_hours_heating_setpoint:
-                total_reward -= 10
+            if min(self.zn0_temp, self.zn1_temp) < self.work_hours_heating_setpoint:
+                total_reward -= 10 * ( self.work_hours_heating_setpoint - min(self.zn0_temp, self.zn1_temp) )
+
+            if max(self.zn0_temp, self.zn1_temp) > self.work_hours_cooling_setpoint:
+                total_reward -= 10 * - ( self.work_hours_cooling_setpoint - max(self.zn0_temp, self.zn1_temp) )
         #     heating_setpoint = work_hours_heating_setpoint
         #     cooling_setpoint = work_hours_cooling_setpoint
         #     thermostat_settings = 'Work-Hours Thermostat'
@@ -250,18 +257,18 @@ class Agent:
 
     def get_action(self, state): #action/actuation in BcaEnv
         # random moves: exploration / exploitation
-        self.epsilon = 80 - self.n_game_steps
+        self.epsilon = 6000 - self.n_game_steps
         final_move = [0] # [0,0,0] in snake game TODO
-        if random.randint(0,200) < self.epsilon:
-            # move = random.randint(0,2) # from snake with argmax
-            # final_move[move] = 1
-            final_move = random.randint(-20,30)
+        if random.randint(0,12000) < self.epsilon:
+            move = random.randint(0,2) # from snake with argmax
+            final_move[move] = 1
+            # final_move = random.randint(-20,30)
         else:
             state0 = torch.tensor(state, dtype=torch.float)
             prediction = self.model(state0)
-            # move = torch.argmax(prediction).item() # TODO fix so that it takes multiple
-            # final_move[move] = 1 # from snake with argmax
-            final_move[0] = prediction
+            move = torch.argmax(prediction).item() # picks output with highest predicted reward
+            final_move[move] = 1 # from snake with argmax
+            # final_move[0] = prediction
         
         return final_move
 
@@ -368,7 +375,7 @@ class Agent:
 
         # denormalize actions? no
         # heating_setpoint, second_actuation = zip(action)
-        heating_setpoint = round( float(action[0]) , 1) # TODO, might be wrong
+        heating_setpoint = round( float(action[0]) , 1) # TODO, might be wrong. It is, this was based on reward = temperature
         
         # remember new stuff
         next_reward = None

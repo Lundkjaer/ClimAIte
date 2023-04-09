@@ -1,3 +1,7 @@
+# This file is not being used.
+# All functions have been transferred into the main file calling the BcaEnv.
+# Because the agent is part of the main file
+
 import torch
 import random
 import numpy as np
