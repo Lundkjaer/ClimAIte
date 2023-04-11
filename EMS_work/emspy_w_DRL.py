@@ -11,8 +11,10 @@ import datetime
 import os
 import matplotlib.pyplot as plt
 import pandas as pd
+import math
 
 import torch
+import torch.nn as nn
 import random
 import numpy as np
 from collections import deque
@@ -312,7 +314,7 @@ class Agent:
         counter = 0
         while counter < self.future_work_hour_booleans_len:
             if (self.work_day_start.hour <= (self.time.hour + counter) % 24 < self.work_day_end.hour # check time
-            and ( 0 < (selfdayofweek + math.floor((self.time.hour + counter) / 24)) % 7 < 6) ): # check weekend. Sunday = 0
+            and ( 0 < (self.day_of_week + math.floor((self.time.hour + counter) / 24)) % 7 < 6) ): # check weekend. Sunday = 0
                 self.future_work_hour_booleans.append(1)
             else:
                 self.future_work_hour_booleans.append(0)
@@ -430,9 +432,9 @@ class Agent:
         
         #observations normalised?
         future_work_hour_booleans_norm = [float(normalise(x, 0, 1)) for x in self.future_work_hour_booleans]
-        future_global_rad_norm = [normalise(x, 0, 1000) for x in self.future_global_rad]
-        future_diffuse_rad_norm = [normalise(x, 0, 1000) for x in self.future_diffuse_rad]
-        future_ext_temp_norm = [normalise(x, -10, 40) for x in self.future_ext_temp]
+        future_global_rad_norm = [float(normalise(x, 0, 1000)) for x in self.future_global_rad]
+        future_diffuse_rad_norm = [float(normalise(x, 0, 1000)) for x in self.future_diffuse_rad]
+        future_ext_temp_norm = [float(normalise(x, -10, 40)) for x in self.future_ext_temp]
 
         def rnn_reduction(normed_list):
             torch.manual_seed(150795)
@@ -462,13 +464,13 @@ class Agent:
         # 1 x electricity use now max- 134,320,000
 
         # current state as np array, add new items to list
-        state_prev = np.append(zn1_temp_norm, # the no. items must match the QNet input size
-                                zn2_temp_norm,
-                                elec_heating_norm,
+        state_prev = np.concatenate(([zn1_temp_norm], # the no. items must match the QNet input size
+                                [zn2_temp_norm],
+                                [elec_heating_norm],
                                 future_works_bool_rnn,
                                 future_global_rad_rnn,
                                 future_diffuse_rad_rnn,
-                                future_ext_temp_rnn) 
+                                future_ext_temp_rnn)) 
         
 
 
@@ -542,7 +544,8 @@ class Agent:
         if self.time.hour % self.print_every_x_hours == 0 and self.time.minute == 0:
             print(f'\n\t* Actuation Function:'
                 #   f'\n\t\t*{thermostat_settings}*'
-                  f'\n\t\tHeating Setpoint: {heating_setpoint}'
+                  f'\n\t\tHeating Setpoint: {heat_setpoint}'
+                  f'\n\t\tWindow open fraction: {win_frac}'
                 #   f'\n\t\tCooling Setpoint: {cooling_setpoint}\n'
                   )
         
