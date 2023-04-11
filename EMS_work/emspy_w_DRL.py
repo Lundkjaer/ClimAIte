@@ -32,7 +32,7 @@ ep_path = "C:/EnergyPlusV22-2-0/"  # path to E+ on system / or use V22-2-0/
 
 
 # IDF File / Modification Paths
-idf_file_name = r"C:\Users\sebas\Documents\GitHub\ClimAIte\EMS_work\test_files\Base_model.idf"  # building energy model (BEM) IDF file
+idf_file_name = r"C:\Users\sebas\Documents\GitHub\ClimAIte\EMS_work\test_files\Base_model simple schedule.idf"  # building energy model (BEM) IDF file
 
 # Weather Path
 ep_weather_path = r"C:\Users\sebas\Documents\GitHub\ClimAIte\EMS_work\test_files\GBR_WAL_Lake.Vyrnwy.034100_TMYx.2007-2021.epw"  # EPW weather file
@@ -46,6 +46,13 @@ cvs_output_path = r'C:\Users\sebas\Documents\GitHub\ClimAIte\EMS_work\dataframes
 #     x = arbitrary_arg
 
 #     return 1.8 * temp_c + 32
+
+def normalise(xvalue, xmin, xmax):
+    xvalue = np.clip(xvalue, xmin, xmax)
+    return round( (xvalue - xmin) / (xmax - xmin) , 5)
+
+def denormalise(xvalue_norm, xmin, xmax):
+    return round( xvalue_norm * (xmax - xmin) + xmin , 2)
 
 
 # STATE SPACE (& Auxiliary Simulation Data)
@@ -63,8 +70,8 @@ Note, however, MdpManager is not required. You can choose to manage variables on
 # actuators_tc = {"attr_handle_name": [("component_type", "control_type", "actuator_key")],...}
 # weather_tc = {"attr_name": [("weather_metric"),...}
 
-zn0 = 'Z1_Ground_Floor_e5e76ca5' # hint: search .idf for 'spacelist,' or 'zonelist,' this shows the spaces/zones
-zn1 = 'Z2_First_Floor_ba8414e7'
+zn1 = 'Z1_Ground_Floor' # hint: search .idf for 'spacelist,' or 'zonelist,' this shows the spaces/zones
+zn2 = 'Z2_First_Floor'
 
 tc_intvars = {}
 
@@ -72,10 +79,11 @@ tc_vars = { # These must be present in .idf file and match possible values in .r
             # example in .idf: Output:Variable,*,Schedule Value,Timestep;
     # Building - same as in .rdd file. rdd file is the variable dictionary.
     # 'hvac_operation_sched': [('Schedule Value', ' SeasonalSchedule_7de19e4d')],  # is building 'open'/'close'? # hint: search .idf for 'schedule:year,' and it will show the name of the schedule, given there is one primary schedule.
-    # 'people_occupant_count': [('People Occupant Count', zn0)],  # number of people per Zn0
+    # 'people_occupant_count': [('People Occupant Count', zn1)],  # number of people per zn1
     # -- Zone 0 (Core_Zn) --
-    'zn0_temp': [('Zone Air Temperature', zn0)],  # deg C
-    'zn0_RH': [('Zone Air Relative Humidity', zn0)],  # %RH
+    'zn1_temp': [('Zone Air Temperature', zn1)],  # deg C
+    'zn2_temp': [('Zone Air Temperature', zn2)],  # deg C
+    'zn1_RH': [('Zone Air Relative Humidity', zn1)],  # %RH
 }
 
 """
@@ -100,26 +108,36 @@ tc_weather = {
     'rain': [('is_raining')],  # T/F
     'snow': [('is_snowing')],  # T/F
     'wind_dir': [('wind_direction')],  # deg
-    'wind_speed': [('wind_speed')]  # m/s
+    'wind_speed': [('wind_speed')],  # m/s
+    'beam_solar': [('beam_solar')], # Wh/m2
+    'diffuse_solar': [('diffuse_solar')] # Wh/m2
     # 'wind_speed_tomorrow': [('wind_speed'), 'tomorrow', 12, 1]  # m/s
 } # 'beam_solar', 'diffuse_solar' # Wh/m2
 
 # ACTION SPACE
 """
-NOTE: only zn0 (CoreZn) has been setup in the model to allow 24/7 HVAC setpoint control. Other zones have default
+NOTE: only zn1 (CoreZn) has been setup in the model to allow 24/7 HVAC setpoint control. Other zones have default
 HVAC operational schedules and night cycle managers that prevent EMS Actuator control 24/7. Essentially, at times the 
 HVAV is "off" and can't be operated. If all zones are to be controlled 24/7, they must be implemented as CoreZn.
 See the "HVAC Systems" tab in OpenStudio to zone configurations.
 """
 tc_actuators = { # 'user_var_name': ['component_type', 'control_type', 'actuator_key'] within the dict
     # HVAC Control Setpoints
-    # 'zn0_cooling_sp': [('Zone Temperature Control', 'Cooling Setpoint', zn0)],  # deg C
-    'zn0_heating_sp': [('Zone Temperature Control', 'Heating Setpoint', zn0)],  # deg C
+    # 'zn1_cooling_sp': [('Zone Temperature Control', 'Cooling Setpoint', zn1)],  # deg C
+    'zn1_heating_sp': [('Zone Temperature Control', 'Heating Setpoint', zn1)],  # deg C
+    'zn2_heating_sp': [('Zone Temperature Control', 'Heating Setpoint', zn2)],  # deg C
 } # Z2_LOUVRE_20,AirFlow Network Window/Door Opening,Venting Opening Factor,[Fraction]
 # opening window from .edd APERTURE_E02C3A1A_OPENING,Zone Ventilation,Air Exchange Flow Rate,[m3/s]
+# Window actuators
+z1_louvre_names_list = [f'z1_louvre_{x+1}' for x in range(20)]
+z2_louvre_names_list = [f'z2_louvre_{x+1}' for x in range(38)]
+for i, each in enumerate(z1_louvre_names_list):
+    tc_actuators[f'z1_louvre_act_{i+1}'] = [('AirFlow Network Window/Door Opening', 'Venting Opening Factor', each)]
+for i, each in enumerate(z2_louvre_names_list):
+    tc_actuators[f'z2_louvre_act_{i+1}'] = [('AirFlow Network Window/Door Opening', 'Venting Opening Factor', each)]
 
-# There's the program setpoints too as; PROGRAMTYPE_E5AC29A0_8EC855C7_SETPOINT_HTGSETP,Schedule:Year,Schedule Value,[ ]
-# There's also outdoor air, maybe for window openings? MODEL OUTDOOR AIR NODE,System Node Setpoint,Temperature Minimum Setpoint,[C]
+all_zones_louvre_act_names_list = [f'z1_louvre_act_{x+1}' for x in range(20)] + [f'z2_louvre_act_{x+1}' for x in range(38)]
+
 
 
 # -- INSTANTIATE 'MDP' --
@@ -180,14 +198,21 @@ class Agent:
         self.actuator_names = mdp.get_ems_names(self.actuators)
 
         # simulation data state
-        self.zn0_temp = None  # deg C
         self.zn1_temp = None  # deg C
+        self.zn2_temp = None  # deg C
         self.time = None
         self.day_of_week = None
-        self.work_hour_booleans_72 = [] # last element is next hour. Reversed list for RNN
+            # first element next hour, reverse list for RNN
+        self.future_work_hour_booleans = [] # school open? boolean
+        self.future_work_hour_booleans_len = 72
+        self.future_global_rad = [] # Global radiation Wh / m2, 0-1000
+        self.future_global_rad_len = 24
+        self.future_diffuse_rad = [] # diffuse radiation Wh / m2, 0-1000
+        self.future_diffuse_rad_len = 24
+        self.future_ext_temp = [] # external temperatures future
+        self.future_ext_temp_len = 24
 
-
-        # self.rl_input_params = [self.zn0_temp, # the no. items must match the QNet input size
+        # self.rl_input_params = [self.zn1_temp, # the no. items must match the QNet input size
         #                         self.time.hour,
         #                         self.day_of_week]
 
@@ -206,7 +231,7 @@ class Agent:
         self.epsilon = 0 # randomness, greedy/exploration
         self.gamma = 0.9 # discount rate
         self.memory = deque(maxlen=MAX_MEMORY) # if memory larger, it calls popleft()
-        self.model = Linear_QNet(4,250,250,250,1) # neural network (input, hidden x3, output)
+        self.model = Linear_QNet(19,250,250,250,41) # neural network (input, hidden x3, output)
         self.trainer = QTrainer(self.model, lr=LR, gamma=self.gamma)
 
     
@@ -230,7 +255,7 @@ class Agent:
 
     def reward_calculation(self): # TODO add in negative reward for spending kWh
         total_reward = 0
-        # TODO make temp scale piecewise and increasing
+        # done - make temp scale piecewise and increasing
         # get meter reading for prev kwh spending
         # can use electricity_facility? - this seems to be instantenous
         # total_reward -= prev_kwh * 2
@@ -238,11 +263,11 @@ class Agent:
 
         if self.work_day_start <= self.time.time() < self.work_day_end:  #
             # during workday
-            if min(self.zn0_temp, self.zn1_temp) < self.work_hours_heating_setpoint:
-                total_reward -= 10 * ( self.work_hours_heating_setpoint - min(self.zn0_temp, self.zn1_temp) )
+            if min(self.zn1_temp, self.zn2_temp) < self.work_hours_heating_setpoint:
+                total_reward -= 10 * ( self.work_hours_heating_setpoint - min(self.zn1_temp, self.zn2_temp) )
 
-            if max(self.zn0_temp, self.zn1_temp) > self.work_hours_cooling_setpoint:
-                total_reward -= 10 * - ( self.work_hours_cooling_setpoint - max(self.zn0_temp, self.zn1_temp) )
+            if max(self.zn1_temp, self.zn2_temp) > self.work_hours_cooling_setpoint:
+                total_reward -= 10 * - ( self.work_hours_cooling_setpoint - max(self.zn1_temp, self.zn2_temp) )
         #     heating_setpoint = work_hours_heating_setpoint
         #     cooling_setpoint = work_hours_cooling_setpoint
         #     thermostat_settings = 'Work-Hours Thermostat'
@@ -258,17 +283,16 @@ class Agent:
     def get_action(self, state): #action/actuation in BcaEnv
         # random moves: exploration / exploitation
         self.epsilon = 6000 - self.n_game_steps
-        final_move = [0] # [0,0,0] in snake game TODO
+        final_move = [0 for x in range(41)] # [0,0,0] in snake game #outputSize
         if random.randint(0,12000) < self.epsilon:
-            move = random.randint(0,2) # from snake with argmax
+            move = random.randint(0,40) # from snake with argmax #outputSize
             final_move[move] = 1
-            # final_move = random.randint(-20,30)
         else:
             state0 = torch.tensor(state, dtype=torch.float)
             prediction = self.model(state0)
             move = torch.argmax(prediction).item() # picks output with highest predicted reward
             final_move[move] = 1 # from snake with argmax
-            # final_move[0] = prediction
+
         
         return final_move
 
@@ -277,6 +301,70 @@ class Agent:
         # Get data from simulation at current timestep (and calling point)
         self.time = self.bca.get_ems_data(['t_datetimes'])
         self.day_of_week = self.bca.get_ems_data(['t_days']) # An integer day of week (1-7)
+
+        self.zn1_temp = self.bca.get_ems_data(['zn1_temp']) # deg C
+        self.zn2_temp = self.bca.get_ems_data(['zn2_temp']) # deg C
+
+            # first element next hour, reverse list for RNN
+        self.future_work_hour_booleans = [] # school open? boolean
+        # self.future_work_hour_booleans_len = 72
+
+        counter = 0
+        while counter < self.future_work_hour_booleans_len:
+            if (self.work_day_start.hour <= (self.time.hour + counter) % 24 < self.work_day_end.hour # check time
+            and ( 0 < (selfdayofweek + math.floor((self.time.hour + counter) / 24)) % 7 < 6) ): # check weekend. Sunday = 0
+                self.future_work_hour_booleans.append(1)
+            else:
+                self.future_work_hour_booleans.append(0)
+            counter += 1
+
+        self.future_global_rad = [] # Global radiation Wh / m2, 0-1000
+        # self.future_global_rad_len = 24
+        counter = 0
+        while counter < self.future_global_rad_len:
+            temp_weather = 0
+            if self.time.hour + counter <= 23: # Today
+                temp_weather = self.bca.get_weather_forecast(['beam_solar'], 'today', self.time.hour + counter, 1) # first timestep is 1
+
+            elif self.time.hour + counter > 23: # Tomorrow
+                temp_weather = self.bca.get_weather_forecast(['beam_solar'], 'tomorrow', (self.time.hour + counter) % 24, 1) # first timestep is 1
+
+            self.future_global_rad.append(temp_weather)
+            counter += 1
+
+
+        self.future_diffuse_rad = [] # diffuse radiation Wh / m2, 0-1000
+        # self.future_diffuse_rad_len = 24
+        counter = 0
+        while counter < self.future_diffuse_rad_len:
+            temp_weather = 0
+            if self.time.hour + counter <= 23: # Today
+                temp_weather = self.bca.get_weather_forecast(['diffuse_solar'], 'today', self.time.hour + counter, 1) # first timestep is 1
+
+            elif self.time.hour + counter > 23: # Tomorrow
+                temp_weather = self.bca.get_weather_forecast(['diffuse_solar'], 'tomorrow', (self.time.hour + counter) % 24, 1) # first timestep is 1
+
+            self.future_diffuse_rad.append(temp_weather)
+            counter += 1
+
+
+        self.future_ext_temp = [] # external temperatures future
+        # self.future_ext_temp_len = 24
+        counter = 0
+        while counter < self.future_ext_temp_len:
+            temp_weather = 0
+            if self.time.hour + counter <= 23: # Today
+                temp_weather = self.bca.get_weather_forecast(['oa_db'], 'today', self.time.hour + counter, 1) # first timestep is 1
+
+            elif self.time.hour + counter > 23: # Tomorrow
+                temp_weather = self.bca.get_weather_forecast(['oa_db'], 'tomorrow', (self.time.hour + counter) % 24, 1) # first timestep is 1
+
+            self.future_ext_temp.append(temp_weather)
+            counter += 1
+
+
+
+
 
         var_data = self.bca.get_ems_data(self.var_names)
         meter_data = self.bca.get_ems_data(self.meter_names, return_dict=True)
@@ -294,22 +382,22 @@ class Agent:
         Note: not all usage examples are presented below.
         """
         # Get specific values from MdpManager based on name
-        self.zn0_temp = self.mdp.get_mdp_element('zn0_temp').value
+        self.zn1_temp = self.mdp.get_mdp_element('zn1_temp').value
         # OR get directly from BcaEnv
-        self.zn0_temp = self.bca.get_ems_data(['zn0_temp'])
+        self.zn1_temp = self.bca.get_ems_data(['zn1_temp'])
         # OR directly from output
-        self.zn0_temp = var_data[0]  # from BcaEnv dict output
-        self.zn0_temp = vars['zn0_temp']  # from MdpManager list output
+        self.zn1_temp = var_data[0]  # from BcaEnv dict output
+        self.zn1_temp = vars['zn1_temp']  # from MdpManager list output
         # outdoor air dry bulb temp
         outdoor_temp = weather_data['oa_db']  # from BcaEnv dict output
         outdoor_temp = weather['oa_db']  # from MdpManager dict output
 
         # use encoding function values to see temperature in Fahrenheit
-        zn0_temp_f = self.mdp.ems_master_list['zn0_temp'].encoded_value  # access the Master list dictionary directly
+        zn1_temp_f = self.mdp.ems_master_list['zn1_temp'].encoded_value  # access the Master list dictionary directly
         outdoor_temp_f = self.mdp.get_mdp_element('oa_db').encoded_value  # using helper function
         # OR call encoding function on multiple elements, even though encoded values are automatically up to date
-        encoded_values_dict = self.mdp.get_ems_encoded_values(['oa_db', 'zn0_temp'])
-        zn0_temp_f = encoded_values_dict['zn0_temp']
+        encoded_values_dict = self.mdp.get_ems_encoded_values(['oa_db', 'zn1_temp'])
+        zn1_temp_f = encoded_values_dict['zn1_temp']
         outdoor_temp_f = encoded_values_dict['oa_db']
 
         # test TODO remove
@@ -322,7 +410,7 @@ class Agent:
             print(f'\n\nTime: {str(self.time)}')
             print('\n\t* Observation Function:')
             print(f'\t\tVars: {var_data}\n\t\tMeters: {meter_data}\n\t\tWeather:{weather_data}')
-            print(f'\t\tZone0 Temp: {round(self.zn0_temp,2)} C, {round(zn0_temp_f,2)} F')
+            print(f'\t\tZone0 Temp: {round(self.zn1_temp,2)} C, {round(zn1_temp_f,2)} F')
             print(f'\t\tOutdoor Temp: {round(outdoor_temp, 2)} C, {round(outdoor_temp_f,2)} F')
             print(f'\t\tNew test, outdoor temp tomorrow at same time: {temp_tmw} C.')
             print(f'\t\tNew test, outdoor relative humidity tomorrow at same time: {rh_tmw} %.')
@@ -340,16 +428,50 @@ class Agent:
 
     def actuation_function(self):
         
-        #observations normalised? TODO
+        #observations normalised?
+        future_work_hour_booleans_norm = [float(normalise(x, 0, 1)) for x in self.future_work_hour_booleans]
+        future_global_rad_norm = [normalise(x, 0, 1000) for x in self.future_global_rad]
+        future_diffuse_rad_norm = [normalise(x, 0, 1000) for x in self.future_diffuse_rad]
+        future_ext_temp_norm = [normalise(x, -10, 40) for x in self.future_ext_temp]
+
+        def rnn_reduction(normed_list):
+            torch.manual_seed(150795)
+            normed_rev = list(reversed(normed_list))
+            rnn = nn.RNN(len(normed_rev), 4, 1)
+            normedtensor = torch.tensor(normed_rev)
+            normed2D = torch.unsqueeze(normedtensor, 0)
+            input = torch.FloatTensor(normed2D)
+            h0 = torch.rand(1, 4)
+            output, hn = rnn(input, h0)
+            return output.tolist()[0]
         
-        temp_tmw = self.bca.get_weather_forecast(['oa_db'], 'tomorrow', self.time.hour, 1) # note: first timestep is 1
+        future_works_bool_rnn = rnn_reduction(future_work_hour_booleans_norm)
+        future_global_rad_rnn = rnn_reduction(future_global_rad_norm)
+        future_diffuse_rad_rnn = rnn_reduction(future_diffuse_rad_norm)
+        future_ext_temp_rnn = rnn_reduction(future_ext_temp_norm)
+
+        zn1_temp_norm = normalise(self.zn1_temp, -10, 40)
+        zn2_temp_norm = normalise(self.zn2_temp, -10, 40)
+        elec_heating_norm = normalise(self.bca.get_ems_data(['electricity_heating']), 0, 135_000_000)
+
+        # x 4	Global radiation	[0-1000] Wh/m2
+        # x 4	Diffuse Radiation
+        # x 4	External temperature [-10-40] C
+        # x 4 x RNN 72-4 hourly boolean of school on/off
+        # x 2 x Internal temperature now
+        # 1 x electricity use now max- 134,320,000
 
         # current state as np array, add new items to list
-        state_prev = np.array([self.zn0_temp, # the no. items must match the QNet input size
-                                self.time.hour,
-                                self.day_of_week,
-                                temp_tmw], dtype=float) 
+        state_prev = np.append(zn1_temp_norm, # the no. items must match the QNet input size
+                                zn2_temp_norm,
+                                elec_heating_norm,
+                                future_works_bool_rnn,
+                                future_global_rad_rnn,
+                                future_diffuse_rad_rnn,
+                                future_ext_temp_rnn) 
         
+
+
         # reward as float or int
         # reward[idx -1]
         prev_reward = self.reward_calculation()
@@ -371,11 +493,40 @@ class Agent:
             print('\n\t Experince replay activated, as Sunday evening at 23:00 detected')
             self.train_long_memory()
 
-        action = self.get_action(state_prev) #predict action # need to fix def to handle multiple
 
-        # denormalize actions? no
-        # heating_setpoint, second_actuation = zip(action)
-        heating_setpoint = round( float(action[0]) , 1) # TODO, might be wrong. It is, this was based on reward = temperature
+        action = self.get_action(state_prev) #predict action reward
+        # the action returns list 0's and one 1, pick the 1 as action
+        
+        assert sum(action) == 1, "There appears to be more than one action chosen by Q-net"
+        # 19 - 20.9 C at 0.1
+        # windows, 0 or 1, open or close
+        # final option 40, closed windows, 5.0 C sp
+        # 0-19, full temp, windows closed
+        # 20-39 full temp, windows open
+        # 40 closed windows 5.0 C
+
+        if action.index(1) <= 19:
+            print('Index is: ', action.index(1))
+            heat_setpoint = 19 + 2 / 20 * (action.index(1))
+            win_frac = 0
+        elif action.index(1) >= 20 and action.index(1) <= 39:
+            print('Index is: ', action.index(1))
+            heat_setpoint = 19 + 2 / 20 * (action.index(1) - 20) # -20 as indices are +20 higher
+            win_frac = 1
+        elif action.index(1) == 40:
+            print('Index is: ', action.index(1))
+            heat_setpoint = 5 # low temp option
+            win_frac = 0
+        else:
+            print('Error, no action chosen')
+            print('Index is: ', action.index(1))
+
+        results_dict = {}
+        results_dict['zn1_heating_sp'] = heat_setpoint
+        results_dict['zn2_heating_sp'] = heat_setpoint
+
+        for i in range(len(all_zones_louvre_act_names_list)):
+            results_dict[all_zones_louvre_act_names_list[i]] = win_frac
         
         # remember new stuff
         next_reward = None
@@ -396,14 +547,10 @@ class Agent:
                   )
         
 
-
         # return final_move # this will be return actuations
         # return dict of next_action
         # return actuation dictionary, referring to actuator EMS variables set
-        return {
-            'zn0_heating_sp': heating_setpoint,
-            # 'zn0_cooling_sp': cooling_setpoint
-        }
+        return results_dict
         
 
 
@@ -439,12 +586,12 @@ output_dfs = sim.get_df(to_csv_file=cvs_output_path)  # LOOK at all the data col
 
 # -- Plot Results --
 # fig, ax = plt.subplots()
-# output_dfs['var'].plot(y='zn0_temp', use_index=True, ax=ax)
+# output_dfs['var'].plot(y='zn1_temp', use_index=True, ax=ax)
 # output_dfs['weather'].plot(y='oa_db', use_index=True, ax=ax)
 # output_dfs['meter'].plot(y='electricity_HVAC', use_index=True, ax=ax, secondary_y=True)
-# output_dfs['actuator'].plot(y='zn0_heating_sp', use_index=True, ax=ax)
-# output_dfs['actuator'].plot(y='zn0_cooling_sp', use_index=True, ax=ax)
-# plt.title('Zn0 Temps and Thermostat Setpoint for Year')
+# output_dfs['actuator'].plot(y='zn1_heating_sp', use_index=True, ax=ax)
+# output_dfs['actuator'].plot(y='zn1_cooling_sp', use_index=True, ax=ax)
+# plt.title('zn1 Temps and Thermostat Setpoint for Year')
 
 # Analyze results in "out" folder, DView, or directly from your Python variables and Pandas Dataframes
 
