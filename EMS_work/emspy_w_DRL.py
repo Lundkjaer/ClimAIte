@@ -147,7 +147,7 @@ my_mdp = MdpManager.generate_mdp_from_tc(tc_intvars, tc_vars, tc_meters, tc_weat
 
 # -- Simulation Params --
 calling_point_for_callback_fxns = EmsPy.available_calling_points[6]  # 5-15 valid for timestep loop during simulation
-sim_timesteps = 1  # every 60 / sim_timestep minutes (e.g 10 minutes per timestep)
+sim_timesteps = 4  # every 60 / sim_timestep minutes (e.g 10 minutes per timestep)
 
 # -- Create Building Energy Simulation Instance --
 sim = BcaEnv(
@@ -226,14 +226,14 @@ class Agent:
         self.work_day_end = datetime.time(16, 0)  # day ends at 8 pm
 
         # print reporting
-        self.print_every_x_hours = 2
+        self.print_every_x_hours = 6
 
         # DRL
         self.n_game_steps = 0
         self.epsilon = 0 # randomness, greedy/exploration
         self.gamma = 0.9 # discount rate
         self.memory = deque(maxlen=MAX_MEMORY) # if memory larger, it calls popleft()
-        self.model = Linear_QNet(19,250,250,250,41) # neural network (input, hidden x3, output)
+        self.model = Linear_QNet(19,400,400,400,11) # neural network (input, hidden x3, output) # nnSizeOBS
         self.trainer = QTrainer(self.model, lr=LR, gamma=self.gamma)
 
     
@@ -284,10 +284,10 @@ class Agent:
 
     def get_action(self, state): #action/actuation in BcaEnv
         # random moves: exploration / exploitation
-        self.epsilon = 6000 - self.n_game_steps
-        final_move = [0 for x in range(41)] # [0,0,0] in snake game #outputSize
+        self.epsilon = 4000 - self.n_game_steps
+        final_move = [0 for x in range(11)] # [0,0,0] in snake game # nnSizeOBS
         if random.randint(0,12000) < self.epsilon:
-            move = random.randint(0,40) # from snake with argmax #outputSize
+            move = random.randint(0,10) # from snake with argmax #nnSizeOBS
             final_move[move] = 1
         else:
             state0 = torch.tensor(state, dtype=torch.float)
@@ -302,7 +302,7 @@ class Agent:
         # -- FETCH/UPDATE SIMULATION DATA --
         # Get data from simulation at current timestep (and calling point)
         self.time = self.bca.get_ems_data(['t_datetimes'])
-        self.day_of_week = self.bca.get_ems_data(['t_days']) # An integer day of week (1-7)
+        self.day_of_week = self.bca.get_ems_data(['t_weekday']) # An integer day of week (1-7)
 
         self.zn1_temp = self.bca.get_ems_data(['zn1_temp']) # deg C
         self.zn2_temp = self.bca.get_ems_data(['zn2_temp']) # deg C
@@ -408,28 +408,41 @@ class Agent:
         temp_tmw_noon_ts1 = self.bca.get_weather_forecast(['oa_db'], 'tomorrow', 12, 1)
 
         # print reporting
-        if self.time.hour % 2 == 0 and self.time.minute == 0:  # report every 2 hours
-            print(f'\n\nTime: {str(self.time)}')
-            print('\n\t* Observation Function:')
-            print(f'\t\tVars: {var_data}\n\t\tMeters: {meter_data}\n\t\tWeather:{weather_data}')
-            print(f'\t\tZone0 Temp: {round(self.zn1_temp,2)} C, {round(zn1_temp_f,2)} F')
-            print(f'\t\tOutdoor Temp: {round(outdoor_temp, 2)} C, {round(outdoor_temp_f,2)} F')
-            print(f'\t\tNew test, outdoor temp tomorrow at same time: {temp_tmw} C.')
-            print(f'\t\tNew test, outdoor relative humidity tomorrow at same time: {rh_tmw} %.')
-            print(f'\t\tNew test, outdoor temp tomorrow at NOON with timestep 1: {temp_tmw_noon} C.')
-            print(f'\t\tNew test, outdoor temp tomorrow at NOON with timestep 1: {temp_tmw_noon_ts1} C.')
+        # if self.time.hour % 2 == 0 and self.time.minute == 0:  # report every 2 hours
+        #     print(f'\n\nTime: {str(self.time)}')
+        #     print('\n\t* Observation Function:')
+        #     print(f'\t\tVars: {var_data}\n\t\tMeters: {meter_data}\n\t\tWeather:{weather_data}')
+        #     print(f'\t\tZone0 Temp: {round(self.zn1_temp,2)} C, {round(zn1_temp_f,2)} F')
+        #     print(f'\t\tOutdoor Temp: {round(outdoor_temp, 2)} C, {round(outdoor_temp_f,2)} F')
+        #     print(f'\t\tNew test, outdoor temp tomorrow at same time: {temp_tmw} C.')
+        #     print(f'\t\tNew test, outdoor relative humidity tomorrow at same time: {rh_tmw} %.')
+        #     print(f'\t\tNew test, outdoor temp tomorrow at NOON with timestep 1: {temp_tmw_noon} C.')
+        #     print(f'\t\tNew test, outdoor temp tomorrow at NOON with timestep 1: {temp_tmw_noon_ts1} C.')
             
 
-            '''sample output
-                    * Observation Function:
-                Vars: [21.757708832346, 34.90428052695303]
-                Meters: {'electricity_facility': 10139533.827672353, 'electricity_heating': 0.0}
-                Weather:{'oa_rh': 44.0, 'oa_db': 18.5, 'oa_pa': 96003.0, 'sun_up': True, 'rain': False, 'snow': False, 'wind_dir': 70.0, 'wind_speed': 7.2}
-                Zone0 Temp: 21.76 C, 21.76 F
-                Outdoor Temp: 18.5 C, 65.3 F'''
+        '''sample output
+                * Observation Function:
+            Vars: [21.757708832346, 34.90428052695303]
+            Meters: {'electricity_facility': 10139533.827672353, 'electricity_heating': 0.0}
+            Weather:{'oa_rh': 44.0, 'oa_db': 18.5, 'oa_pa': 96003.0, 'sun_up': True, 'rain': False, 'snow': False, 'wind_dir': 70.0, 'wind_speed': 7.2}
+            Zone0 Temp: 21.76 C, 21.76 F
+            Outdoor Temp: 18.5 C, 65.3 F'''
 
     def actuation_function(self):
-        
+        # results_dict = {}
+        # return results_dict
+
+        # print('\tfuture work hour booleans ', self.future_work_hour_booleans)
+        # print('\tfuture global radiation ', self.future_global_rad)
+        # print('\tfuture diffuse radiation ', self.future_diffuse_rad)
+        # print('\tfuture external temperatures ', self.future_ext_temp)
+        # print('\telectric  heating ', self.bca.get_ems_data(['electricity_heating']))
+        # print('\tZone 1 temp ', self.zn1_temp)
+        # print('\tZone 2 temp ', self.zn2_temp)
+
+
+
+
         #observations normalised?
         future_work_hour_booleans_norm = [float(normalise(x, 0, 1)) for x in self.future_work_hour_booleans]
         future_global_rad_norm = [float(normalise(x, 0, 1000)) for x in self.future_global_rad]
@@ -470,7 +483,7 @@ class Agent:
                                 future_works_bool_rnn,
                                 future_global_rad_rnn,
                                 future_diffuse_rad_rnn,
-                                future_ext_temp_rnn)) 
+                                future_ext_temp_rnn)) # nnSizeOBS
         
 
 
@@ -493,6 +506,8 @@ class Agent:
         # train long memory / experience replay
         if self.day_of_week == 7 and self.time.hour == 23: # sunday evening experience replay
             print('\n\t Experince replay activated, as Sunday evening at 23:00 detected')
+            print('\n\t Experince replay activated, as Sunday evening at 23:00 detected')
+            print('\n\t Experince replay activated, as Sunday evening at 23:00 detected')
             self.train_long_memory()
 
 
@@ -500,23 +515,20 @@ class Agent:
         # the action returns list 0's and one 1, pick the 1 as action
         
         assert sum(action) == 1, "There appears to be more than one action chosen by Q-net"
-        # 19 - 20.9 C at 0.1
-        # windows, 0 or 1, open or close
-        # final option 40, closed windows, 5.0 C sp
-        # 0-19, full temp, windows closed
-        # 20-39 full temp, windows open
-        # 40 closed windows 5.0 C
+            # 18, 18.5, 19, 19.5, 20 win open
+            # 18, 18.5, 19, 19.5, 20 win closed
+            # 5 win closed
 
-        if action.index(1) <= 19:
-            print('Index is: ', action.index(1))
-            heat_setpoint = 19 + 2 / 20 * (action.index(1))
+        if action.index(1) <= 4:
+            # print('Index is: ', action.index(1))
+            heat_setpoint = 18 + 2 / 4 * (action.index(1))
             win_frac = 0
-        elif action.index(1) >= 20 and action.index(1) <= 39:
-            print('Index is: ', action.index(1))
-            heat_setpoint = 19 + 2 / 20 * (action.index(1) - 20) # -20 as indices are +20 higher
+        elif action.index(1) >= 5 and action.index(1) <= 9:
+            # print('Index is: ', action.index(1))
+            heat_setpoint = 18 + 2 / 4 * (action.index(1) - 5) # -5 as indices are +5 higher
             win_frac = 1
-        elif action.index(1) == 40:
-            print('Index is: ', action.index(1))
+        elif action.index(1) == 10:
+            # print('Index is: ', action.index(1))
             heat_setpoint = 5 # low temp option
             win_frac = 0
         else:
@@ -542,7 +554,8 @@ class Agent:
         # create plot for each day time step? - if self.time.hour % 12 == 0 # twice a day
                 # print reporting
         if self.time.hour % self.print_every_x_hours == 0 and self.time.minute == 0:
-            print(f'\n\t* Actuation Function:'
+            print(f'\n\t time is: ', str(self.time), 'weekday is: ', str(self.day_of_week),
+                f'\n\t* Actuation Function:'
                 #   f'\n\t\t*{thermostat_settings}*'
                   f'\n\t\tHeating Setpoint: {heat_setpoint}'
                   f'\n\t\tWindow open fraction: {win_frac}'
@@ -583,6 +596,11 @@ path_record_name = os.path.join(current_directory, 'agent memory.csv')
 df = pd.DataFrame(my_agent.memory, columns= ["state_prev", "action", "next_reward", "next_state", "game_over"])
 df.to_csv(path_or_buf = path_record_name)
 
+
+path_record_loss_list = os.path.join(current_directory, 'agent loss.csv')
+loss_list = my_agent.trainer.loss_record
+dfloss = pd.DataFrame(loss_list)
+dfloss.to_csv(path_or_buf = path_record_loss_list)
 
 # -- Sample Output Data --
 output_dfs = sim.get_df(to_csv_file=cvs_output_path)  # LOOK at all the data collected here, custom DFs can be made too
