@@ -24,9 +24,52 @@ from helper_plot import plot
 from emspy import EmsPy, BcaEnv, MdpManager
 
 
+base_path = r"W:\Insync\GDrive\Main\TU Delft\Thesis\DRL runs"
+
+name_of_control_this_run = 'EPBaseline' 
+# dict_control_names = {
+#             'EPBaseline':0,
+#             'RLBaseNoForesight':1,
+#             'RL24hAllRNN':2,
+#             'RL24hNoSolarRNN':3,
+#             'RL04hAllRNN':4,
+#             'RL04hNoSolarRNN':5,
+#             'RL04hFlatInput':6}
+# current_control_no = dict_control_names[name_of_control_this_run]
+
+dict_Qnet_input_size = {
+            'EPBaseline':0, #  it's 0, network redundant
+            'RLBaseNoForesight':7, # includes work boolean
+            'RL24hAllRNN':19,
+            'RL24hNoSolarRNN':11,
+            'RL04hAllRNN':19,
+            'RL04hNoSolarRNN':11,
+            'RL04hFlatInput':87}
+Qnet_input_size = dict_Qnet_input_size[name_of_control_this_run]
+
+building_types_list = [ 'Building-InsuBASE-MassBASE',
+                        'Building-InsuBASE-MassDW',
+                        'Building-InsuBASE-MassUP',
+                        'Building-InsuDW-MassBASE',
+                        'Building-InsuDW-MassDW',
+                        'Building-InsuDW-MassUP',
+                        'Building-InsuUP-MassBASE',
+                        'Building-InsuUP-MassDW',
+                        'Building-InsuUP-MassUP']
+# # loop
+# # for builidng_enum_no, unique_building_name in enumerate(building_types_list):
+
+# model_folder_path = './model'
+# if not os.path.exists(model_folder_path):
+#     os.makedirs(model_folder_path)
+
+# Edit idf RunPeriod? to 3 years?
+
+# save_path_building_results = os.path.join(list_building_paths[unique_building_no],name_of_control_this_run)
+# os.chdir(save_path_building_results) # EP /out folder will be saved to this location
+
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'  # a workaround to an error I encountered when running sim  
 # OMP: Error #15: Initializing libiomp5md.dll, but found libiomp5md.dll already initialized.
-
 
 # -- FILE PATHS --
 # * E+ Download Path *
@@ -34,20 +77,18 @@ ep_path = "C:/EnergyPlusV22-2-0/"  # path to E+ on system / or use V22-2-0/
 
 
 # IDF File / Modification Paths
-idf_file_name = r"C:\Users\sebas\Documents\GitHub\ClimAIte\EMS_work\test_files\Base_model simple schedule.idf"  # building energy model (BEM) IDF file
+# idf_file_name = r"C:\Users\sebas\Documents\GitHub\ClimAIte\EMS_work\test_files\Base_model simple schedule.idf"  # building energy model (BEM) IDF file
+idf_file_name = os.path.join(base_path, unique_building_name, 'in.idf')
 
 # Weather Path
 ep_weather_path = r"C:\Users\sebas\Documents\GitHub\ClimAIte\EMS_work\test_files\GBR_WAL_Lake.Vyrnwy.034100_TMYx.2007-2021.epw"  # EPW weather file
 
+
+
+
 # Output .csv Path (optional)
-cvs_output_path = r'C:\Users\sebas\Documents\GitHub\ClimAIte\EMS_work\dataframes_output_test.csv'
+# cvs_output_path = r'C:\Users\sebas\Documents\GitHub\ClimAIte\EMS_work\dataframes_output_test.csv'
 
-
-# def temp_c_to_f(temp_c: float, arbitrary_arg=None):
-#     """Convert temp from C to F. Test function with arbitrary argument, for example."""
-#     x = arbitrary_arg
-
-#     return 1.8 * temp_c + 32
 
 def normalise(xvalue, xmin, xmax):
     xvalue = np.clip(xvalue, xmin, xmax)
@@ -147,7 +188,7 @@ my_mdp = MdpManager.generate_mdp_from_tc(tc_intvars, tc_vars, tc_meters, tc_weat
 
 # -- Simulation Params --
 calling_point_for_callback_fxns = EmsPy.available_calling_points[6]  # 5-15 valid for timestep loop during simulation
-sim_timesteps = 4  # every 60 / sim_timestep minutes (e.g 10 minutes per timestep)
+sim_timesteps = 1  # every 60 / sim_timestep minutes (e.g 10 minutes per timestep)
 
 # -- Create Building Energy Simulation Instance --
 sim = BcaEnv(
@@ -229,11 +270,12 @@ class Agent:
         self.print_every_x_hours = 6
 
         # DRL
+
         self.n_game_steps = 0
-        self.epsilon = 0 # randomness, greedy/exploration
+        self.epsilon = 0 # randomness, greedy/exploration. This is overridden in def action()
         self.gamma = 0.9 # discount rate
         self.memory = deque(maxlen=MAX_MEMORY) # if memory larger, it calls popleft()
-        self.model = Linear_QNet(19,400,400,400,11) # neural network (input, hidden x3, output) # nnSizeOBS
+        self.model = Linear_QNet(Qnet_input_size,400,400,400,11) # neural network (input, hidden x3, output) # nnSizeOBS
         self.trainer = QTrainer(self.model, lr=LR, gamma=self.gamma)
 
     
@@ -284,7 +326,7 @@ class Agent:
 
     def get_action(self, state): #action/actuation in BcaEnv
         # random moves: exploration / exploitation
-        self.epsilon = 4000 - self.n_game_steps
+        self.epsilon = 7000 - self.n_game_steps
         final_move = [0 for x in range(11)] # [0,0,0] in snake game # nnSizeOBS
         if random.randint(0,12000) < self.epsilon:
             move = random.randint(0,10) # from snake with argmax #nnSizeOBS
@@ -429,8 +471,10 @@ class Agent:
             Outdoor Temp: 18.5 C, 65.3 F'''
 
     def actuation_function(self):
-        # results_dict = {}
-        # return results_dict
+        
+        if name_of_control_this_run == 'EPBaseline': # if EPBaseline
+            results_dict = {}
+            return results_dict
 
         # print('\tfuture work hour booleans ', self.future_work_hour_booleans)
         # print('\tfuture global radiation ', self.future_global_rad)
@@ -440,10 +484,17 @@ class Agent:
         # print('\tZone 1 temp ', self.zn1_temp)
         # print('\tZone 2 temp ', self.zn2_temp)
 
+        # 'EPBaseline':0, #  it's 0, network redundant
+        # 'RLBaseNoForesight':3,
+        # 'RL24hAllRNN':19,
+        # 'RL24hNoSolarRNN':15,
+        # 'RL04hAllRNN':19,
+        # 'RL04hNoSolarRNN':15,
+        # 'RL04hFlatInput':87}
 
 
 
-        #observations normalised?
+        #observations normalised, full lists
         future_work_hour_booleans_norm = [float(normalise(x, 0, 1)) for x in self.future_work_hour_booleans]
         future_global_rad_norm = [float(normalise(x, 0, 1000)) for x in self.future_global_rad]
         future_diffuse_rad_norm = [float(normalise(x, 0, 1000)) for x in self.future_diffuse_rad]
@@ -460,11 +511,18 @@ class Agent:
             output, hn = rnn(input, h0)
             return output.tolist()[0]
         
-        future_works_bool_rnn = rnn_reduction(future_work_hour_booleans_norm)
-        future_global_rad_rnn = rnn_reduction(future_global_rad_norm)
-        future_diffuse_rad_rnn = rnn_reduction(future_diffuse_rad_norm)
-        future_ext_temp_rnn = rnn_reduction(future_ext_temp_norm)
+        # if 24h foresight
+        if name_of_control_this_run == 'RL24hAllRNN' or name_of_control_this_run == 'RL24hNoSolarRNN':
+            future_global_rad_rnn = rnn_reduction(future_global_rad_norm[:24])
+            future_diffuse_rad_rnn = rnn_reduction(future_diffuse_rad_norm[:24])
+            future_ext_temp_rnn = rnn_reduction(future_ext_temp_norm[:24])
+        # if 4h foresight
+        if name_of_control_this_run == 'RL04hAllRNN' or name_of_control_this_run == 'RL04hNoSolarRNN':
+            future_global_rad_rnn = rnn_reduction(future_global_rad_norm[:4])
+            future_diffuse_rad_rnn = rnn_reduction(future_diffuse_rad_norm[:4])
+            future_ext_temp_rnn = rnn_reduction(future_ext_temp_norm[:4])
 
+        future_works_bool_rnn = rnn_reduction(future_work_hour_booleans_norm[:72])
         zn1_temp_norm = normalise(self.zn1_temp, -10, 40)
         zn2_temp_norm = normalise(self.zn2_temp, -10, 40)
         elec_heating_norm = normalise(self.bca.get_ems_data(['electricity_heating']), 0, 135_000_000)
@@ -477,14 +535,36 @@ class Agent:
         # 1 x electricity use now max- 134,320,000
 
         # current state as np array, add new items to list
-        state_prev = np.concatenate(([zn1_temp_norm], # the no. items must match the QNet input size
-                                [zn2_temp_norm],
-                                [elec_heating_norm],
-                                future_works_bool_rnn,
-                                future_global_rad_rnn,
-                                future_diffuse_rad_rnn,
-                                future_ext_temp_rnn)) # nnSizeOBS
+        # if statements to pick correct size and inputs for current network
+        # All inputs, 19
+        if name_of_control_this_run == 'RL24hAllRNN' or name_of_control_this_run == 'RL04hAllRNN':
+            state_prev = np.concatenate(([zn1_temp_norm], # the no. items must match the QNet input size
+                                    [zn2_temp_norm],
+                                    [elec_heating_norm],
+                                    future_works_bool_rnn,
+                                    future_global_rad_rnn,
+                                    future_diffuse_rad_rnn,
+                                    future_ext_temp_rnn)) # nnSizeOBS
+        # no Solar, 11 inputs only
+        if name_of_control_this_run == 'RL24hNoSolarRNN' or name_of_control_this_run == 'RL04hNoSolarRNN':
+            state_prev = np.concatenate(([zn1_temp_norm], # the no. items must match the QNet input size
+                                    [zn2_temp_norm],
+                                    [elec_heating_norm],
+                                    future_works_bool_rnn,
+                                    future_ext_temp_rnn)) # nnSizeOBS
+        # no future knowledge, RLBaseNoForesight
+        if name_of_control_this_run == 'RLBaseNoForesight':
+            state_prev = np.concatenate(([zn1_temp_norm], # the no. items must match the QNet input size
+                                    [zn2_temp_norm],
+                                    [elec_heating_norm],
+                                    future_works_bool_rnn)) # nnSizeOBS
         
+        # TODO, flatinput list, RL04hFlatInput
+
+        assert Qnet_input_size == len(state_prev), "The Qnet input size does not match the state input list length"
+        
+
+
 
 
         # reward as float or int
@@ -588,7 +668,9 @@ sim.run_env(ep_weather_path)
 sim.reset_state()  # reset when done
 
 
-my_agent.model.save()
+# my_agent.model.save()
+
+# TODO, update save paths
 
 # save agent memory
 current_directory = r"C:\Users\sebas\Documents\GitHub\ClimAIte\EMS_work"
@@ -603,7 +685,8 @@ dfloss = pd.DataFrame(loss_list)
 dfloss.to_csv(path_or_buf = path_record_loss_list)
 
 # -- Sample Output Data --
-output_dfs = sim.get_df(to_csv_file=cvs_output_path)  # LOOK at all the data collected here, custom DFs can be made too
+# output_dfs = sim.get_df(to_csv_file=cvs_output_path)  # LOOK at all the data collected here, custom DFs can be made too
+
 
 # -- Plot Results --
 # fig, ax = plt.subplots()
