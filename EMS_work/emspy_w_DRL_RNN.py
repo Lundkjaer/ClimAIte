@@ -21,7 +21,7 @@ import torch.nn as nn
 import random
 import numpy as np
 from collections import deque
-from model import Linear_QNet, QTrainer
+from model_RNN import Linear_QNet, QTrainer
 from helper_plot import plot
 
 from emspy import EmsPy, BcaEnv, MdpManager
@@ -46,23 +46,34 @@ Folder Structure for multiple records
 					% time too hot
 """
 
-base_path = r"W:\Insync\GDrive\Main\TU Delft\Thesis\DRL runs 03"
+base_path = r"W:\Insync\GDrive\Main\TU Delft\Thesis\DRL runs 04"
 
 # name_of_control_this_run = 'RLBaseNoForesight' 
-list_names = ['RLBaseNoForesight', 'RL24hAllRNN', 'RL04hAllRNN', 'RL24hNoSolarRNN', 'RL04hNoSolarRNN', 'RL04hFlatInput']
+list_names = ['RL24hAllRNN', 'RL04hAllRNN', 'RL24hNoSolarRNN', 'RL04hNoSolarRNN', 'RLBaseNoForesight', 'RL04hFlatInput']
 
 for name_of_control_this_run in list_names:
 
+    if name_of_control_this_run[2:4] == '24':
+        control_foresight = 24
+    elif name_of_control_this_run[2:4] == '04':
+        control_foresight = 4
+    else:
+        control_foresight = 0
 
-    dict_Qnet_input_size = {
+    if 'NoSolar' in name_of_control_this_run:
+        solar_included = False
+    else:
+        solar_included = True
+
+    dict_Qnet_flat_input_size = {
                 'EPBaseline':0, #  it's 0, network redundant
-                'RLBaseNoForesight':7, # includes work boolean rnn
-                'RL24hAllRNN':19,
-                'RL24hNoSolarRNN':11,
-                'RL04hAllRNN':19,
-                'RL04hNoSolarRNN':11,
-                'RL04hFlatInput':87} # 3 + 4 + 4 + 4 + 72
-    Qnet_input_size = dict_Qnet_input_size[name_of_control_this_run]
+                'RLBaseNoForesight':3,
+                'RL24hAllRNN':3,
+                'RL24hNoSolarRNN':3,
+                'RL04hAllRNN':3,
+                'RL04hNoSolarRNN':3,
+                'RL04hFlatInput':3} 
+    Qnet_flat_input_size = dict_Qnet_flat_input_size[name_of_control_this_run]
 
     # 9 buliding types that will be cycled through
     building_types_list = [ 'Building-InsuBASE-MassBASE']#,
@@ -78,6 +89,10 @@ for name_of_control_this_run in list_names:
     # loop to go through each building per specified technique
     for builidng_enum_no, unique_building_name in enumerate(building_types_list):
 
+        print(f'Control foresight is {control_foresight} hours')
+        print(f'Control type is {name_of_control_this_run}')
+        print(f'Solar is set to {solar_included} ')
+        print(f'Building is {unique_building_name} ')
 
         # Edit idf RunPeriod to 3 years also for baseline, only 1 year
         iddfile = r"C:\EnergyPlusV22-2-0\Energy+.idd"
@@ -89,7 +104,7 @@ for name_of_control_this_run in list_names:
         if name_of_control_this_run == 'EPBaseline': # 1 year only
             idf1.idfobjects['RUNPERIOD'][0].End_Year = idf1.idfobjects['RUNPERIOD'][0].Begin_Year
         else: # 3 years run period
-            idf1.idfobjects['RUNPERIOD'][0].End_Year = idf1.idfobjects['RUNPERIOD'][0].Begin_Year + 6
+            idf1.idfobjects['RUNPERIOD'][0].End_Year = idf1.idfobjects['RUNPERIOD'][0].Begin_Year + 2
         idf1.newidfobject('Output:Variable')
         idf1.idfobjects['Output:Variable'][-1].Variable_Name = 'Surface Heat Storage Rate per Area'
         idf1.newidfobject('Output:Variable')
@@ -296,7 +311,7 @@ for name_of_control_this_run in list_names:
                 #                         self.time.hour,
                 #                         self.day_of_week]
 
-                self.work_hours_heating_setpoint = 20.5  # deg C
+                self.work_hours_heating_setpoint = 20  # deg C
                 self.work_hours_cooling_setpoint = 25  # deg C
                 self.off_hours_heating_setpoint = 15  # deg C # not currently used
                 self.off_hours_cooilng_setpoint = 30  # deg C # not currently used
@@ -312,7 +327,7 @@ for name_of_control_this_run in list_names:
                 self.epsilon = 0 # randomness, greedy/exploration. This is overridden in def action()
                 self.gamma = 0.9 # discount rate
                 self.memory = deque(maxlen=MAX_MEMORY) # if memory larger, it calls popleft()
-                self.model = Linear_QNet(Qnet_input_size,80,80,80,80,80,11) # neural network (input, hidden x5, output) # nnSizeOBS
+                self.model = Linear_QNet(Qnet_flat_input_size,80,80,11, control_foresight, solar_included) # neural network (input, hidden x5, output) # nnSizeOBS
                 self.trainer = QTrainer(self.model, lr=LR, gamma=self.gamma)
 
             
@@ -340,7 +355,7 @@ for name_of_control_this_run in list_names:
                 # get meter reading for prev kwh spending
                 # can use electricity_facility? - this seems to be instantenous
                 # total_reward -= prev_kwh * 2
-                total_reward -= round(self.bca.get_ems_data(['electricity_heating']) / 6_000_000 / 7, 4)
+                total_reward -= round(self.bca.get_ems_data(['electricity_heating']) / 6_000_000 / 10, 4)
 
                 if self.work_day_start <= self.time.time() < self.work_day_end:  #
                     # during workday
@@ -363,9 +378,9 @@ for name_of_control_this_run in list_names:
 
             def get_action(self, state): #action/actuation in BcaEnv
                 # random moves: exploration / exploitation
-                self.epsilon = 12000 - self.n_game_steps
+                self.epsilon = 7000 - self.n_game_steps
                 final_move = [0 for x in range(11)] # [0,0,0] in snake game # nnSizeOBS
-                if random.randint(0,20000) < self.epsilon:
+                if random.randint(0,12000) < self.epsilon:
                     move = random.randint(0,10) # from snake with argmax #nnSizeOBS
                     final_move[move] = 1
                 else:
@@ -526,12 +541,9 @@ for name_of_control_this_run in list_names:
 
 
 
-                #observations normalised, full lists
-                future_work_hour_booleans_norm = [float(normalise(x, 0, 1)) for x in self.future_work_hour_booleans]
-                future_global_rad_norm = [float(normalise(x, 0, 1000)) for x in self.future_global_rad]
-                future_diffuse_rad_norm = [float(normalise(x, 0, 1000)) for x in self.future_diffuse_rad]
-                future_ext_temp_norm = [float(normalise(x, -10, 40)) for x in self.future_ext_temp]
+                
 
+                """
                 def rnn_reduction(normed_list):
                     torch.manual_seed(150795)
                     normed_rev = list(reversed(normed_list))
@@ -555,6 +567,14 @@ for name_of_control_this_run in list_names:
                     future_ext_temp_rnn = rnn_reduction(future_ext_temp_norm[:4])
 
                 future_works_bool_rnn = rnn_reduction(future_work_hour_booleans_norm[:72])
+"""
+
+                #observations normalised, full lists
+                future_work_hour_booleans_norm = [float(normalise(x, 0, 1)) for x in self.future_work_hour_booleans]
+                future_global_rad_norm = [float(normalise(x, 0, 1000)) for x in self.future_global_rad]
+                future_diffuse_rad_norm = [float(normalise(x, 0, 1000)) for x in self.future_diffuse_rad]
+                future_ext_temp_norm = [float(normalise(x, -10, 40)) for x in self.future_ext_temp]
+
                 zn1_temp_norm = normalise(self.zn1_temp, -10, 40)
                 zn2_temp_norm = normalise(self.zn2_temp, -10, 40)
                 elec_heating_norm = normalise(self.bca.get_ems_data(['electricity_heating']), 0, 135_000_000)
@@ -576,27 +596,28 @@ for name_of_control_this_run in list_names:
                 # current state as np array, add new items to list
                 # if statements to pick correct size and inputs for current network
                 # All inputs, 19
+                # input_state: workhours, temps, radglo, raddif, flats - full length b4 RNN
                 if name_of_control_this_run == 'RL24hAllRNN' or name_of_control_this_run == 'RL04hAllRNN':
-                    state_prev = np.concatenate(([zn1_temp_norm], # the no. items must match the QNet input size
+                    state_prev = np.concatenate((future_work_hour_booleans_norm,
+                                            future_ext_temp_norm[:control_foresight],
+                                            future_global_rad_norm[:control_foresight],
+                                            future_diffuse_rad_norm[:control_foresight],
+                                            [zn1_temp_norm],
                                             [zn2_temp_norm],
-                                            [elec_heating_norm],
-                                            future_works_bool_rnn,
-                                            future_global_rad_rnn,
-                                            future_diffuse_rad_rnn,
-                                            future_ext_temp_rnn)) # nnSizeOBS
+                                            [elec_heating_norm])) # nnSizeOBS
                 # no Solar, 11 inputs only
                 if name_of_control_this_run == 'RL24hNoSolarRNN' or name_of_control_this_run == 'RL04hNoSolarRNN':
-                    state_prev = np.concatenate(([zn1_temp_norm], # the no. items must match the QNet input size
+                    state_prev = np.concatenate((future_work_hour_booleans_norm,
+                                            future_ext_temp_norm[:control_foresight],
+                                            [zn1_temp_norm], 
                                             [zn2_temp_norm],
-                                            [elec_heating_norm],
-                                            future_works_bool_rnn,
-                                            future_ext_temp_rnn)) # nnSizeOBS
+                                            [elec_heating_norm])) # nnSizeOBS
                 # no future knowledge, RLBaseNoForesight
                 if name_of_control_this_run == 'RLBaseNoForesight':
-                    state_prev = np.concatenate(([zn1_temp_norm], # the no. items must match the QNet input size
+                    state_prev = np.concatenate((future_work_hour_booleans_norm,
+                                            [zn1_temp_norm], 
                                             [zn2_temp_norm],
-                                            [elec_heating_norm],
-                                            future_works_bool_rnn)) # nnSizeOBS
+                                            [elec_heating_norm])) # nnSizeOBS
                 
                 # flatinput list, RL04hFlatInput, 87 no inputs total. Lists need to be reversed
                 if name_of_control_this_run == 'RL04hFlatInput':
@@ -608,7 +629,7 @@ for name_of_control_this_run in list_names:
                                             future_diffuse_rad_norm[:4],
                                             future_ext_temp_norm[:4])) # nnSizeOBS
 
-                assert Qnet_input_size == len(state_prev), "The Qnet input size does not match the state input list length"
+                # assert Qnet_flat_input_size == len(state_prev), "The Qnet input size does not match the state input list length"
                 
 
 
@@ -632,7 +653,7 @@ for name_of_control_this_run in list_names:
                     self.train_short_memory(state_before, action_chosen, reward_given, state_after, game_overs)
 
                 # train long memory / experience replay
-                if  self.time.hour == 23: # Now every day. Prev. sunday evening experience replay self.day_of_week == 7 and
+                if  self.n_game_steps > 3 and self.time.hour == 23: # Now every day. Prev. sunday evening experience replay self.day_of_week == 7 and
                     # print('\n\t Experince replay activated, as Sunday evening at 23:00 detected')
                     # print('\n\t Experince replay activated, as Sunday evening at 23:00 detected')
                     # print('\n\t Experince replay activated, as Sunday evening at 23:00 detected')
