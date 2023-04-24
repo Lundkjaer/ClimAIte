@@ -46,10 +46,10 @@ Folder Structure for multiple records
 					% time too hot
 """
 
-base_path = r"W:\Insync\GDrive\Main\TU Delft\Thesis\DRL runs 04"
+base_path = r"W:\Insync\GDrive\Main\TU Delft\Thesis\DRL runs 06"
 
 # name_of_control_this_run = 'RLBaseNoForesight' 
-list_names = ['RL24hAllRNN', 'RL04hAllRNN', 'RL24hNoSolarRNN', 'RL04hNoSolarRNN', 'RLBaseNoForesight', 'RL04hFlatInput']
+list_names = ['RL24hAllRNN', 'RL04hAllRNN', 'RLBaseNoForesight']#, 'RL24hNoSolarRNN', 'RL04hNoSolarRNN', 'RL04hFlatInput']
 
 for name_of_control_this_run in list_names:
 
@@ -76,15 +76,15 @@ for name_of_control_this_run in list_names:
     Qnet_flat_input_size = dict_Qnet_flat_input_size[name_of_control_this_run]
 
     # 9 buliding types that will be cycled through
-    building_types_list = [ 'Building-InsuBASE-MassBASE']#,
-                            # 'Building-InsuBASE-MassDW',
-                            # 'Building-InsuBASE-MassUP',
-                            # 'Building-InsuDW-MassBASE',
-                            # 'Building-InsuDW-MassDW',
-                            # 'Building-InsuDW-MassUP',
-                            # 'Building-InsuUP-MassBASE',
-                            # 'Building-InsuUP-MassDW',
-                            # 'Building-InsuUP-MassUP']
+    building_types_list = ['Building-InsuBASE-MassBASE',
+                            'Building-InsuBASE-MassDW',
+                            'Building-InsuBASE-MassUP',
+                            'Building-InsuDW-MassBASE',
+                            'Building-InsuDW-MassDW',
+                            'Building-InsuDW-MassUP',
+                            'Building-InsuUP-MassBASE',
+                            'Building-InsuUP-MassDW',
+                            'Building-InsuUP-MassUP']
 
     # loop to go through each building per specified technique
     for builidng_enum_no, unique_building_name in enumerate(building_types_list):
@@ -104,11 +104,11 @@ for name_of_control_this_run in list_names:
         if name_of_control_this_run == 'EPBaseline': # 1 year only
             idf1.idfobjects['RUNPERIOD'][0].End_Year = idf1.idfobjects['RUNPERIOD'][0].Begin_Year
         else: # 3 years run period
-            idf1.idfobjects['RUNPERIOD'][0].End_Year = idf1.idfobjects['RUNPERIOD'][0].Begin_Year + 2
-        idf1.newidfobject('Output:Variable')
-        idf1.idfobjects['Output:Variable'][-1].Variable_Name = 'Surface Heat Storage Rate per Area'
-        idf1.newidfobject('Output:Variable')
-        idf1.idfobjects['Output:Variable'][-1].Variable_Name = 'Surface Heat Storage Energy'
+            idf1.idfobjects['RUNPERIOD'][0].End_Year = idf1.idfobjects['RUNPERIOD'][0].Begin_Year + 6
+        # idf1.newidfobject('Output:Variable')
+        # idf1.idfobjects['Output:Variable'][-1].Variable_Name = 'Surface Heat Storage Rate per Area'
+        # idf1.newidfobject('Output:Variable')
+        # idf1.idfobjects['Output:Variable'][-1].Variable_Name = 'Surface Heat Storage Energy'
         
         idf1.saveas(os.path.join(base_path, unique_building_name, 'in_edit.idf'))
 
@@ -136,6 +136,8 @@ for name_of_control_this_run in list_names:
 
         # Weather Path
         ep_weather_path = r"C:\Users\sebas\Documents\GitHub\ClimAIte\EMS_work\test_files\GBR_WAL_Lake.Vyrnwy.034100_TMYx.2007-2021.epw"  # EPW weather file
+        # 7 years data
+        # ep_weather_path = r"W:\Insync\GDrive\Main\TU Delft\Thesis\EnergyPlus\Weather data\combined weather data\GBR_WAL_Combined 7 years.epw"  # EPW weather file
 
         # Output .csv Path (optional)
         # cvs_output_path = r'C:\Users\sebas\Documents\GitHub\ClimAIte\EMS_work\dataframes_output_test.csv'
@@ -338,6 +340,7 @@ for name_of_control_this_run in list_names:
                 self.memory.append((state, action, reward, next_state, game_over)) #deque will popleft() if max_memory is reached. Extra () parantheses to store values as single tuple
 
             def train_long_memory(self):
+                # print('Start train long memory loop')
                 if len(self.memory) > BATCH_SIZE:
                     mini_sample = random.sample(self.memory, BATCH_SIZE) # return list of tuples
                 else:
@@ -345,6 +348,7 @@ for name_of_control_this_run in list_names:
                     
                 states, actions, rewards, next_states, game_overs = zip(*mini_sample) # unpack into lists rather than combined tuples
                 self.trainer.train_step(states, actions, rewards, next_states, game_overs)
+                # print('Finished training long memory loop')
 
             def train_short_memory(self, state, action, reward, next_state, game_over):
                 self.trainer.train_step(state, action, reward, next_state, game_over)
@@ -385,7 +389,7 @@ for name_of_control_this_run in list_names:
                     final_move[move] = 1
                 else:
                     state0 = torch.tensor(state, dtype=torch.float)
-                    prediction = self.model(state0)
+                    prediction, _ = self.model(state0)
                     move = torch.argmax(prediction).item() # picks output with highest predicted reward
                     final_move[move] = 1 # from snake with argmax
 
@@ -598,23 +602,23 @@ for name_of_control_this_run in list_names:
                 # All inputs, 19
                 # input_state: workhours, temps, radglo, raddif, flats - full length b4 RNN
                 if name_of_control_this_run == 'RL24hAllRNN' or name_of_control_this_run == 'RL04hAllRNN':
-                    state_prev = np.concatenate((future_work_hour_booleans_norm,
-                                            future_ext_temp_norm[:control_foresight],
-                                            future_global_rad_norm[:control_foresight],
-                                            future_diffuse_rad_norm[:control_foresight],
+                    state_prev = np.concatenate((list(reversed(future_work_hour_booleans_norm)),
+                                            list(reversed(future_ext_temp_norm[:control_foresight])),
+                                            list(reversed(future_global_rad_norm[:control_foresight])),
+                                            list(reversed(future_diffuse_rad_norm[:control_foresight])),
                                             [zn1_temp_norm],
                                             [zn2_temp_norm],
                                             [elec_heating_norm])) # nnSizeOBS
                 # no Solar, 11 inputs only
                 if name_of_control_this_run == 'RL24hNoSolarRNN' or name_of_control_this_run == 'RL04hNoSolarRNN':
-                    state_prev = np.concatenate((future_work_hour_booleans_norm,
-                                            future_ext_temp_norm[:control_foresight],
+                    state_prev = np.concatenate((list(reversed(future_work_hour_booleans_norm)),
+                                            list(reversed(future_ext_temp_norm[:control_foresight])),
                                             [zn1_temp_norm], 
                                             [zn2_temp_norm],
                                             [elec_heating_norm])) # nnSizeOBS
                 # no future knowledge, RLBaseNoForesight
                 if name_of_control_this_run == 'RLBaseNoForesight':
-                    state_prev = np.concatenate((future_work_hour_booleans_norm,
+                    state_prev = np.concatenate((list(reversed(future_work_hour_booleans_norm)),
                                             [zn1_temp_norm], 
                                             [zn2_temp_norm],
                                             [elec_heating_norm])) # nnSizeOBS
@@ -633,8 +637,8 @@ for name_of_control_this_run in list_names:
                 
 
 
-                manual_dataframe.append(state_prev)
-                manual_dataframe.append(additional_input_norm_list)
+                # manual_dataframe.append(state_prev)
+                # manual_dataframe.append(additional_input_norm_list)
 
                 # reward as float or int
                 # reward[idx -1]
@@ -653,10 +657,10 @@ for name_of_control_this_run in list_names:
                     self.train_short_memory(state_before, action_chosen, reward_given, state_after, game_overs)
 
                 # train long memory / experience replay
-                if  self.n_game_steps > 3 and self.time.hour == 23: # Now every day. Prev. sunday evening experience replay self.day_of_week == 7 and
+                if  self.n_game_steps > 3 and self.day_of_week == 7 and self.time.hour == 23: # Now every day. Prev. sunday evening experience replay self.day_of_week == 7 and
                     # print('\n\t Experince replay activated, as Sunday evening at 23:00 detected')
                     # print('\n\t Experince replay activated, as Sunday evening at 23:00 detected')
-                    # print('\n\t Experince replay activated, as Sunday evening at 23:00 detected')
+                    # print('\n\t Experince replay activated, as evening at 23:00 detected')
                     self.train_long_memory()
 
 
@@ -755,9 +759,9 @@ for name_of_control_this_run in list_names:
 
 
         # Manual dataframe
-        path_record_manual_dataframe = os.path.join(current_directory, 'manual dataframe.csv')
-        manual_df = pd.DataFrame(manual_dataframe)
-        manual_df.to_csv(path_or_buf = path_record_manual_dataframe)
+        # path_record_manual_dataframe = os.path.join(current_directory, 'manual dataframe.csv')
+        # manual_df = pd.DataFrame(manual_dataframe)
+        # manual_df.to_csv(path_or_buf = path_record_manual_dataframe)
 
         # -- Sample Output Data --
         # output_dfs = sim.get_df(to_csv_file=cvs_output_path)  # LOOK at all the data collected here, custom DFs can be made too

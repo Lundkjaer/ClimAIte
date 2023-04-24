@@ -40,28 +40,33 @@ class Linear_QNet(nn.Module):
         assert len(x.size()) == 2, 'Forward definition, the unsqueeze to standardize tensor failed'
         # x1 RNN(x[12:23])
         # x2 linear1(x[23:])
-        hx = self.init_hidden(x.size(0), 4 if self.solar_included else 2) if hx is None else hx
+        # hx = self.init_hidden(x.size(0), 4 if self.solar_included else 2) if hx is None else hx
+        hx = self.init_hidden(1, 4 if self.solar_included else 2) if hx is None else hx
 
         # batch_size = x.size(0)
 
         if self.solar_included == True: # work hours, temps, rad glo, rad dif, flats
-            xs = x.split_with_sizes([72,self.fsight_len,self.fsight_len,self.fsight_len,self.flats_len],1)
+            xs = x.split_with_sizes([72,self.fsight_len,self.fsight_len,self.fsight_len,self.flats_len], 1)
             xwork, xtemps, xradglo, xraddif, xflats = xs[0], xs[1], xs[2], xs[3], xs[4]
             # TODO as hx splits
+            hxs = hx.split_with_sizes([self.rnn_size, self.rnn_size, self.rnn_size, self.rnn_size], 1)
+            hxwork, hxtemps, hxradglo, hxraddif = hxs[0], hxs[1], hxs[2], hxs[3]
         else:  # work hours, temps, flats
-            xs = x.split_with_sizes([72,self.fsight_len,self.flats_len],1)
+            xs = x.split_with_sizes([72,self.fsight_len,self.flats_len], 1)
             xwork, xtemps, xflats = xs[0], xs[1], xs[2]
             # TODO as hx splits
+            hxs = hx.split_with_sizes([self.rnn_size, self.rnn_size], 1)
+            hxwork, hxtemps = hxs[0], hxs[1]
             
         # sequence_length = self.fsight_len # x.size(1) # , unique for each, separate tensors
         # work_hours = x[-1][72] # , no maintain batches
 
         # TODO use hx split hidden layers
-        outwork, hidden = self.rnn_work(xwork)
-        outtemp, hidden = self.rnn_temps(xtemps)
+        outwork, hxwork = self.rnn_work(xwork, hxwork)
+        outtemp, hxtemps = self.rnn_temps(xtemps, hxtemps)
         if self.solar_included == True:
-            outradglo, hidden = self.rnn_rad_glo(xradglo)
-            outraddif, hidden = self.rnn_rad_dif(xraddif)
+            outradglo, hxradglo = self.rnn_rad_glo(xradglo, hxradglo)
+            outraddif, hxraddif = self.rnn_rad_dif(xraddif, hxraddif)
 
         # 
         # x = state_multi.split_with_sizes([3,4,18],1)
@@ -72,9 +77,11 @@ class Linear_QNet(nn.Module):
         if self.solar_included == True: # combine outputs back into 1 tensor with batch
             x = torch.concat((outwork, outtemp, outradglo, outraddif, xflats), 1) 
             # TODO as hx concat
+            hidden = torch.concat((hxwork, hxtemps, hxradglo, hxraddif), 1)
         else:
             x = torch.concat((outwork, outtemp, xflats), 1)
             # TODO as hx concat
+            hidden = torch.concat((hxwork, hxtemps), 1)
 
 
         x = F.relu(self.linear1(x))
@@ -84,11 +91,11 @@ class Linear_QNet(nn.Module):
         return x, hidden
     
     def init_hidden(self, batch_size, n_rnns):
-        zero_tensor = torch.zeros(batch_size, self.rnn_size, dtype=torch.float)
-        new_zero_tensor = zero_tensor
-        for i in range(n_rnns-1):
-            new_zero_tensor = torch.concat((new_zero_tensor, zero_tensor), 1)
-        return new_zero_tensor
+        zero_tensor = torch.zeros(batch_size, self.rnn_size * n_rnns, dtype=torch.float)
+        # new_zero_tensor = zero_tensor
+        # for i in range(n_rnns-1):
+        #     new_zero_tensor = torch.concat((new_zero_tensor, zero_tensor), 1)
+        return zero_tensor
     
     
     def save(self, file_name='model.pth'):
@@ -124,7 +131,7 @@ class QTrainer:
             game_over = (game_over, )
         
         # 1: predicted Q values with current state
-        pred = self.model(state) # gives 3 values (output layer) from network
+        pred, _ = self.model(state) # gives 3 values (output layer) from network
 
 
         with torch.no_grad():
@@ -133,7 +140,8 @@ class QTrainer:
             for idx in range(len(game_over)):
                 Q_new = reward[idx]
                 if not game_over[idx]:
-                    Q_new = reward[idx] + self.gamma * torch.max(self.model(next_state[idx]))
+                    next_pred, _ = self.model(next_state[idx])
+                    Q_new = reward[idx] + self.gamma * torch.max(next_pred)
                 
                 target[idx][torch.argmax(action).item()] = Q_new
 
