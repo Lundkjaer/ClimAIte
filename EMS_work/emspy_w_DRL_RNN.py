@@ -46,7 +46,7 @@ Folder Structure for multiple records
 					% time too hot
 """
 
-base_path = r"W:\Insync\GDrive\Main\TU Delft\Thesis\DRL runs 06"
+base_path = r"W:\Insync\GDrive\Main\TU Delft\Thesis\DRL runs 07"
 
 # name_of_control_this_run = 'RLBaseNoForesight' 
 list_names = ['RL24hAllRNN', 'RL04hAllRNN', 'RLBaseNoForesight']#, 'RL24hNoSolarRNN', 'RL04hNoSolarRNN', 'RL04hFlatInput']
@@ -67,12 +67,12 @@ for name_of_control_this_run in list_names:
 
     dict_Qnet_flat_input_size = {
                 'EPBaseline':0, #  it's 0, network redundant
-                'RLBaseNoForesight':3,
-                'RL24hAllRNN':3,
-                'RL24hNoSolarRNN':3,
-                'RL04hAllRNN':3,
-                'RL04hNoSolarRNN':3,
-                'RL04hFlatInput':3} 
+                'RLBaseNoForesight':26,
+                'RL24hAllRNN':26,
+                'RL24hNoSolarRNN':26,
+                'RL04hAllRNN':26,
+                'RL04hNoSolarRNN':26,
+                'RL04hFlatInput':26} 
     Qnet_flat_input_size = dict_Qnet_flat_input_size[name_of_control_this_run]
 
     # 9 buliding types that will be cycled through
@@ -104,11 +104,11 @@ for name_of_control_this_run in list_names:
         if name_of_control_this_run == 'EPBaseline': # 1 year only
             idf1.idfobjects['RUNPERIOD'][0].End_Year = idf1.idfobjects['RUNPERIOD'][0].Begin_Year
         else: # 3 years run period
-            idf1.idfobjects['RUNPERIOD'][0].End_Year = idf1.idfobjects['RUNPERIOD'][0].Begin_Year + 6
-        # idf1.newidfobject('Output:Variable')
-        # idf1.idfobjects['Output:Variable'][-1].Variable_Name = 'Surface Heat Storage Rate per Area'
-        # idf1.newidfobject('Output:Variable')
-        # idf1.idfobjects['Output:Variable'][-1].Variable_Name = 'Surface Heat Storage Energy'
+            idf1.idfobjects['RUNPERIOD'][0].End_Year = idf1.idfobjects['RUNPERIOD'][0].Begin_Year + 2
+        idf1.newidfobject('Output:Variable')
+        idf1.idfobjects['Output:Variable'][-1].Variable_Name = 'Surface Heat Storage Rate per Area'
+        idf1.newidfobject('Output:Variable')
+        idf1.idfobjects['Output:Variable'][-1].Variable_Name = 'Surface Heat Storage Energy'
         
         idf1.saveas(os.path.join(base_path, unique_building_name, 'in_edit.idf'))
 
@@ -145,10 +145,12 @@ for name_of_control_this_run in list_names:
 
         def normalise(xvalue, xmin, xmax):
             xvalue = np.clip(xvalue, xmin, xmax)
-            return round( (xvalue - xmin) / (xmax - xmin) , 5)
+            # return round( (xvalue - xmin) / (xmax - xmin) , 5) # [0,1]
+            return round( 2* ((xvalue - xmin) / (xmax - xmin)) -1 , 5) # [-1,1]
 
         def denormalise(xvalue_norm, xmin, xmax):
-            return round( xvalue_norm * (xmax - xmin) + xmin , 2)
+            # return round( xvalue_norm * (xmax - xmin) + xmin , 2)
+            return round( (xvalue_norm + 1) * (xmax - xmin) *0.5 + xmin , 2)
 
 
         # STATE SPACE (& Auxiliary Simulation Data)
@@ -179,7 +181,18 @@ for name_of_control_this_run in list_names:
             # -- Zone 0 (Core_Zn) --
             'zn1_temp': [('Zone Operative Temperature', zn1)],  # deg C
             'zn2_temp': [('Zone Operative Temperature', zn2)],  # deg C
+            'zn1_Airtemp': [('Zone Mean Air Temperature', zn1)],  # deg C
+            'zn2_Airtemp': [('Zone Mean Air Temperature', zn2)],  # deg C
+            'zn1_Radtemp': [('Zone Mean Radiant Temperature', zn1)],  # deg C
+            'zn2_Radtemp': [('Zone Mean Radiant Temperature', zn2)],  # deg C
             'zn1_RH': [('Zone Air Relative Humidity', zn1)],  # %RH
+            'zn2_RH': [('Zone Air Relative Humidity', zn2)],  # %RH
+            'zn1_IntWallMassRate': [('Surface Heat Storage Rate per Area', 'INT_WALLS_MASS_GROUND::Z1_GROUND_FLOOR_SPACE')],  # W/m2
+            'zn1_StairsMassRate': [('Surface Heat Storage Rate per Area', 'STAIRS_MASS::Z1_GROUND_FLOOR_SPACE')],  # W/m2
+            'zn2_IntWallMassRate': [('Surface Heat Storage Rate per Area', 'INT_WALLS_MASS_FIRST::Z2_FIRST_FLOOR_SPACE')],  # W/m2
+            'zn1_IntWallMassEnergy': [('Surface Heat Storage Energy', 'INT_WALLS_MASS_GROUND::Z1_GROUND_FLOOR_SPACE')],  # J
+            'zn1_StairsMassEnergy': [('Surface Heat Storage Energy', 'STAIRS_MASS::Z1_GROUND_FLOOR_SPACE')],  # J
+            'zn2_IntWallMassEnergy': [('Surface Heat Storage Energy', 'INT_WALLS_MASS_FIRST::Z2_FIRST_FLOOR_SPACE')],  # J
         }
 
         """
@@ -590,9 +603,39 @@ for name_of_control_this_run in list_names:
                 # x 2 x Internal temperature now
                 # 1 x electricity use now max- 134,320,000
 
-                additional_input_norm_list = np.concatenate(([self.bca.get_ems_data([f'{x}']) for x in all_zones_louvre_act_names_list],
-                                              [self.bca.get_ems_data(['zn1_heating_sp'])],
-                                              [self.bca.get_ems_data(['zn2_heating_sp'])]
+
+                # 'zn1_Airtemp': [('Zone Mean Air Temperature', zn1)],  # deg C
+                # 'zn2_Airtemp': [('Zone Mean Air Temperature', zn2)],  # deg C
+                # 'zn1_Radtemp': [('Zone Mean Radiant Temperature', zn1)],  # deg C
+                # 'zn2_Radtemp': [('Zone Mean Radiant Temperature', zn2)],  # deg C
+
+                # self.bca.get_ems_data(['t_weekday'])
+
+
+                additional_input_norm_list = np.concatenate(([float(self.bca.get_ems_data([f'{all_zones_louvre_act_names_list[0]}']))],
+                                              [float(normalise(self.bca.get_ems_data(['zn1_heating_sp']), -10, 40))],
+                                              [float(normalise(self.bca.get_ems_data(['zn2_heating_sp']), -10, 40))],
+                                              [float(normalise(self.bca.get_ems_data(['oa_rh']), 0, 100))],
+                                              [float(normalise(self.bca.get_ems_data(['oa_db']), -10, 40))],
+                                              [float(normalise(self.bca.get_ems_data(['oa_pa']), 90_000, 110_000))],
+                                              [float(self.bca.get_ems_data(['sun_up']))],
+                                              [float(self.bca.get_ems_data(['rain']))],
+                                              [float(normalise(self.bca.get_ems_data(['wind_dir']), 0, 360))],
+                                              [float(normalise(self.bca.get_ems_data(['wind_speed']), 0, 30))],
+                                              [float(normalise(self.bca.get_ems_data(['zn1_RH']), 0, 100))],
+                                              [float(normalise(self.bca.get_ems_data(['zn2_RH']), 0, 100))],
+                                              [float(normalise(self.bca.get_ems_data(['zn1_Airtemp']), -10, 40))],
+                                              [float(normalise(self.bca.get_ems_data(['zn2_Airtemp']), -10, 40))],
+                                              [float(normalise(self.bca.get_ems_data(['zn1_Radtemp']), -10, 40))],
+                                              [float(normalise(self.bca.get_ems_data(['zn2_Radtemp']), -10, 40))],
+                                              [float(normalise(self.bca.get_ems_data(['zn1_IntWallMassRate']), -30, 30))],
+                                              [float(normalise(self.bca.get_ems_data(['zn1_StairsMassRate']), -30, 30))],
+                                              [float(normalise(self.bca.get_ems_data(['zn2_IntWallMassRate']), -30, 30))],
+                                              [float(normalise(self.bca.get_ems_data(['zn1_IntWallMassEnergy']), -50_000_000, 50_000_000))],
+                                              [float(normalise(self.bca.get_ems_data(['zn1_StairsMassEnergy']), -50_000_000, 50_000_000))],
+                                              [float(normalise(self.bca.get_ems_data(['zn2_IntWallMassEnergy']), -50_000_000, 50_000_000))],
+                                              [float(normalise(self.bca.get_ems_data(['t_weekday']), 1, 7))],
+
                                             ))
                 # TODO, normalise values in list above
                 # flat_list = [item for sublist in additional_input_norm_list for item in sublist]
@@ -608,20 +651,23 @@ for name_of_control_this_run in list_names:
                                             list(reversed(future_diffuse_rad_norm[:control_foresight])),
                                             [zn1_temp_norm],
                                             [zn2_temp_norm],
-                                            [elec_heating_norm])) # nnSizeOBS
+                                            [elec_heating_norm],
+                                            additional_input_norm_list)) # nnSizeOBS
                 # no Solar, 11 inputs only
                 if name_of_control_this_run == 'RL24hNoSolarRNN' or name_of_control_this_run == 'RL04hNoSolarRNN':
                     state_prev = np.concatenate((list(reversed(future_work_hour_booleans_norm)),
                                             list(reversed(future_ext_temp_norm[:control_foresight])),
                                             [zn1_temp_norm], 
                                             [zn2_temp_norm],
-                                            [elec_heating_norm])) # nnSizeOBS
+                                            [elec_heating_norm],
+                                            additional_input_norm_list)) # nnSizeOBS
                 # no future knowledge, RLBaseNoForesight
                 if name_of_control_this_run == 'RLBaseNoForesight':
                     state_prev = np.concatenate((list(reversed(future_work_hour_booleans_norm)),
                                             [zn1_temp_norm], 
                                             [zn2_temp_norm],
-                                            [elec_heating_norm])) # nnSizeOBS
+                                            [elec_heating_norm],
+                                            additional_input_norm_list)) # nnSizeOBS
                 
                 # flatinput list, RL04hFlatInput, 87 no inputs total. Lists need to be reversed
                 if name_of_control_this_run == 'RL04hFlatInput':
@@ -631,7 +677,8 @@ for name_of_control_this_run in list_names:
                                             future_work_hour_booleans_norm,
                                             future_global_rad_norm[:4],
                                             future_diffuse_rad_norm[:4],
-                                            future_ext_temp_norm[:4])) # nnSizeOBS
+                                            future_ext_temp_norm[:4],
+                                            additional_input_norm_list)) # nnSizeOBS
 
                 # assert Qnet_flat_input_size == len(state_prev), "The Qnet input size does not match the state input list length"
                 
@@ -672,18 +719,22 @@ for name_of_control_this_run in list_names:
                     # 18, 18.5, 19, 19.5, 20 win closed
                     # 5 win closed
 
-                if action.index(1) <= 4:
+                    # 18  win open
+                    # 19.25, 19.5, 19.75, 20 win closed
+                    # 5 win closed
+
+                if action.index(1) <= 4: # nnSizeOBS
                     # print('Index is: ', action.index(1))
                     heat_setpoint = 18 + 2 / 4 * (action.index(1))
-                    win_frac = 0
+                    win_frac = 0 # closed
                 elif action.index(1) >= 5 and action.index(1) <= 9:
                     # print('Index is: ', action.index(1))
                     heat_setpoint = 18 + 2 / 4 * (action.index(1) - 5) # -5 as indices are +5 higher
-                    win_frac = 1
+                    win_frac = 1 # open
                 elif action.index(1) == 10:
                     # print('Index is: ', action.index(1))
                     heat_setpoint = 5 # low temp option
-                    win_frac = 0
+                    win_frac = 0 # closed
                 else:
                     print('Error, no action chosen')
                     print('Index is: ', action.index(1))
