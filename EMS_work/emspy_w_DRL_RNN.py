@@ -270,7 +270,7 @@ for name_of_control_this_run in list_names:
 
         MAX_MEMORY = 100_000 # roughly 11 years of hourly data
         BATCH_SIZE = 1000
-        LR = 0.001
+        LR = 0.0001
         manual_dataframe = []
 
         class Agent:
@@ -342,7 +342,7 @@ for name_of_control_this_run in list_names:
                 self.epsilon = 0 # randomness, greedy/exploration. This is overridden in def action()
                 self.gamma = 0.9 # discount rate
                 self.memory = deque(maxlen=MAX_MEMORY) # if memory larger, it calls popleft()
-                self.model = Linear_QNet(Qnet_flat_input_size,80,80,11, control_foresight, solar_included) # neural network (input, hidden x5, output) # nnSizeOBS
+                self.model = Linear_QNet(Qnet_flat_input_size,300,300,11, control_foresight, solar_included) # neural network (input, hidden x5, output) # nnSizeOBS
                 self.trainer = QTrainer(self.model, lr=LR, gamma=self.gamma)
 
             
@@ -395,14 +395,14 @@ for name_of_control_this_run in list_names:
 
             def get_action(self, state): #action/actuation in BcaEnv
                 # random moves: exploration / exploitation
-                self.epsilon = 7000 - self.n_game_steps
+                self.epsilon = 30_000 - self.n_game_steps
                 final_move = [0 for x in range(11)] # [0,0,0] in snake game # nnSizeOBS
-                if random.randint(0,12000) < self.epsilon:
+                if random.randint(0,30_000) < self.epsilon or random.randint(0,100) < 5:
                     move = random.randint(0,10) # from snake with argmax #nnSizeOBS
                     final_move[move] = 1
                 else:
                     state0 = torch.tensor(state, dtype=torch.float)
-                    prediction, _ = self.model(state0)
+                    prediction = self.model(state0)
                     move = torch.argmax(prediction).item() # picks output with highest predicted reward
                     final_move[move] = 1 # from snake with argmax
 
@@ -683,10 +683,6 @@ for name_of_control_this_run in list_names:
                 # assert Qnet_flat_input_size == len(state_prev), "The Qnet input size does not match the state input list length"
                 
 
-
-                # manual_dataframe.append(state_prev)
-                # manual_dataframe.append(additional_input_norm_list)
-
                 # reward as float or int
                 # reward[idx -1]
                 prev_reward = self.reward_calculation()
@@ -746,6 +742,22 @@ for name_of_control_this_run in list_names:
                 for i in range(len(all_zones_louvre_act_names_list)):
                     results_dict[all_zones_louvre_act_names_list[i]] = win_frac
                 
+
+                
+                line_in_manual_df = []
+                # line_in_manual_df.append(state_prev)
+                # line_in_manual_df.append(additional_input_norm_list)
+                line_in_manual_df.append(self.n_game_steps)
+                line_in_manual_df.append(self.day_of_week)
+                line_in_manual_df.append(self.time)
+                line_in_manual_df.append(self.zn1_temp)
+                line_in_manual_df.append(self.zn2_temp)
+                line_in_manual_df.append(self.bca.get_ems_data(['electricity_heating']))
+                manual_dataframe.append(line_in_manual_df)
+
+
+
+
                 # remember new stuff
                 next_reward = None
                 next_state = None
@@ -792,7 +804,7 @@ for name_of_control_this_run in list_names:
         sim.reset_state()  # reset when done
 
 
-        # my_agent.model.save()
+        my_agent.model.save(f'{name_of_control_this_run}-{unique_building_name}')
 
 
         # save agent memory
@@ -810,9 +822,9 @@ for name_of_control_this_run in list_names:
 
 
         # Manual dataframe
-        # path_record_manual_dataframe = os.path.join(current_directory, 'manual dataframe.csv')
-        # manual_df = pd.DataFrame(manual_dataframe)
-        # manual_df.to_csv(path_or_buf = path_record_manual_dataframe)
+        path_record_manual_dataframe = os.path.join(current_directory, 'manual dataframe.csv')
+        manual_df = pd.DataFrame(manual_dataframe)
+        manual_df.to_csv(path_or_buf = path_record_manual_dataframe)
 
         # -- Sample Output Data --
         # output_dfs = sim.get_df(to_csv_file=cvs_output_path)  # LOOK at all the data collected here, custom DFs can be made too
