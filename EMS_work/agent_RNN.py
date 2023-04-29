@@ -409,12 +409,12 @@ class Agent:
                                         [float(self.normalise(self.bca.get_ems_data(['zn2_Airtemp']), -10, 40))],
                                         [float(self.normalise(self.bca.get_ems_data(['zn1_Radtemp']), -10, 40))],
                                         [float(self.normalise(self.bca.get_ems_data(['zn2_Radtemp']), -10, 40))],
-                                        [float(self.normalise(self.bca.get_ems_data(['zn1_IntWallMassRate']), -30, 30))],
-                                        [float(self.normalise(self.bca.get_ems_data(['zn1_StairsMassRate']), -30, 30))],
-                                        [float(self.normalise(self.bca.get_ems_data(['zn2_IntWallMassRate']), -30, 30))],
-                                        [float(self.normalise(self.bca.get_ems_data(['zn1_IntWallMassEnergy']), -50_000_000, 50_000_000))],
-                                        [float(self.normalise(self.bca.get_ems_data(['zn1_StairsMassEnergy']), -50_000_000, 50_000_000))],
-                                        [float(self.normalise(self.bca.get_ems_data(['zn2_IntWallMassEnergy']), -50_000_000, 50_000_000))],
+                                        [float(self.normalise(self.bca.get_ems_data(['zn1_IntWallMassRate']), -80, 80))],
+                                        [float(self.normalise(self.bca.get_ems_data(['zn1_StairsMassRate']), -80, 80))],
+                                        [float(self.normalise(self.bca.get_ems_data(['zn2_IntWallMassRate']), -80, 80))],
+                                        [float(self.normalise(self.bca.get_ems_data(['zn1_IntWallMassEnergy']), -150_000_000, 150_000_000))],
+                                        [float(self.normalise(self.bca.get_ems_data(['zn1_StairsMassEnergy']), -150_000_000, 150_000_000))],
+                                        [float(self.normalise(self.bca.get_ems_data(['zn2_IntWallMassEnergy']), -150_000_000, 150_000_000))],
                                         [float(self.normalise(self.bca.get_ems_data(['t_weekday']), 1, 7))],
 
                                     ))
