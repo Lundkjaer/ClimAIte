@@ -49,6 +49,16 @@ Folder Structure for multiple records
 
 base_path = r"W:\Insync\GDrive\Main\TU Delft\Thesis\DRL runs 07"
 
+# -- FILE PATHS --
+# * E+ Download Path *
+ep_path = "C:/EnergyPlusV22-2-0/"  # path to E+ on system / or use V22-2-0/
+
+# Weather Path
+ep_weather_path = r"C:\Users\sebas\Documents\GitHub\ClimAIte\EMS_work\test_files\GBR_WAL_Lake.Vyrnwy.034100_TMYx.2007-2021.epw"  # EPW weather file
+# 7 years data
+# ep_weather_path = r"W:\Insync\GDrive\Main\TU Delft\Thesis\EnergyPlus\Weather data\combined weather data\GBR_WAL_Combined 7 years.epw"  # EPW weather file
+
+
 # name_of_control_this_run = 'RLBaseNoForesight' 
 list_names = ['RL24hAllRNN', 'RL04hAllRNN', 'RLBaseNoForesight']#, 'RL24hNoSolarRNN', 'RL04hNoSolarRNN', 'RL04hFlatInput']
 
@@ -99,24 +109,13 @@ for name_of_control_this_run in list_names:
 
         os.chdir(current_directory) # EP /out folder will be saved to this location, also model loss and memory csv
 
-
-
         os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'  # a workaround to an error I encountered when running sim  
         # OMP: Error #15: Initializing libiomp5md.dll, but found libiomp5md.dll already initialized.
 
-        # -- FILE PATHS --
-        # * E+ Download Path *
-        ep_path = "C:/EnergyPlusV22-2-0/"  # path to E+ on system / or use V22-2-0/
-
-
+    
         # IDF File / Modification Paths
         # idf_file_name = r"C:\Users\sebas\Documents\GitHub\ClimAIte\EMS_work\test_files\Base_model simple schedule.idf"  # building energy model (BEM) IDF file
         idf_file_name = os.path.join(base_path, unique_building_name, 'in_edit.idf')
-
-        # Weather Path
-        ep_weather_path = r"C:\Users\sebas\Documents\GitHub\ClimAIte\EMS_work\test_files\GBR_WAL_Lake.Vyrnwy.034100_TMYx.2007-2021.epw"  # EPW weather file
-        # 7 years data
-        # ep_weather_path = r"W:\Insync\GDrive\Main\TU Delft\Thesis\EnergyPlus\Weather data\combined weather data\GBR_WAL_Combined 7 years.epw"  # EPW weather file
 
         # Output .csv Path (optional)
         # cvs_output_path = r'C:\Users\sebas\Documents\GitHub\ClimAIte\EMS_work\dataframes_output_test.csv'
